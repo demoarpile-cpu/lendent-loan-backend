@@ -122,7 +122,7 @@ exports.register = async (req, res) => {
         if (role === 'borrower' && newUserId) {
             await db.execute(
                 'INSERT INTO borrowers (name, nrc, phone) VALUES (?, ?, ?) ON DUPLICATE KEY UPDATE phone = ?',
-                [name, nrc, phone, phone] 
+                [name, nrc || null, phone || null, phone || null] 
             );
         }
 

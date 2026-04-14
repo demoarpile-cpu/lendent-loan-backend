@@ -51,7 +51,7 @@ exports.addBorrower = async (req, res) => {
         // 4. Create new borrower (if not exists)
         const [result] = await db.execute(
             'INSERT INTO borrowers (name, nrc, email, phone, dob, photo_url, nrc_url) VALUES (?, ?, ?, ?, ?, ?, ?)',
-            [name, nrc, email || null, phone, dob || null, photoUrl, nrcUrl]
+            [name || null, nrc || null, email || null, phone || null, dob || null, photoUrl || null, nrcUrl || null]
         );
         const borrowerId = result.insertId;
 
