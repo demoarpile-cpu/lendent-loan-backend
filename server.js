@@ -21,7 +21,25 @@ if (!fs.existsSync(uploadDir)) {
 const app = express();
 const PORT = process.env.PORT || 5000;
 
-app.use(cors());
+const allowedOrigins = [
+    'https://loanmanagements.kiaansoftware.com',
+    'http://localhost:5173',
+    'http://localhost:5174'
+];
+
+app.use(cors({
+    origin: function (origin, callback) {
+        // allow requests with no origin (like mobile apps or curl)
+        if (!origin) return callback(null, true);
+
+        if (allowedOrigins.includes(origin)) {
+            callback(null, true);
+        } else {
+            callback(new Error('CORS not allowed for this origin: ' + origin));
+        }
+    },
+    credentials: true
+}));
 
 // Body Parsers
 app.use(express.json());
