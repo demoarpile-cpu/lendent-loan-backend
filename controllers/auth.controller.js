@@ -18,7 +18,7 @@ exports.register = async (req, res) => {
     try {
         console.log('Registration Request Body:', req.body);
         console.log('Registration Files:', req.files);
-        let { name, phone, email, password, businessName, referralCode, role, nrc, companyRegistrationNumber, lenderType, planType } = req.body;
+        let { name, phone, email, password, businessName, referralCode, role, nrc, companyRegistrationNumber, lenderType, planType, dob } = req.body;
 
         // Default role to lender if not provided
         role = role === 'borrower' ? 'borrower' : 'lender';
@@ -113,16 +113,16 @@ exports.register = async (req, res) => {
         const finalPlanType = planType || 'free';
         const finalMembershipTier = finalPlanType !== 'free' ? 'premium' : 'free';
         const [result] = await db.execute(
-            'INSERT INTO users (name, phone, email, nrc, company_registration_number, password, business_name, lender_type, lender_id, license_url, nrc_url, referral_code, role, status, membership_tier, plan_type) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
-            [name, phone, email || null, nrc || null, companyRegistrationNumber || null, hashedPassword, businessName || null, role === 'lender' ? lenderType : null, generatedLenderId, licenseUrl || null, nrcUrl || null, userReferralCode, role, initialStatus, finalMembershipTier, finalPlanType]
+            'INSERT INTO users (name, phone, email, nrc, dob, company_registration_number, password, business_name, lender_type, lender_id, license_url, nrc_url, referral_code, role, status, membership_tier, plan_type) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+            [name, phone, email || null, nrc || null, dob || null, companyRegistrationNumber || null, hashedPassword, businessName || null, role === 'lender' ? lenderType : null, generatedLenderId, licenseUrl || null, nrcUrl || null, userReferralCode, role, initialStatus, finalMembershipTier, finalPlanType]
         );
 
         const newUserId = result.insertId || null;
         // 5. If it is a borrower, we should also create a borrower profile
         if (role === 'borrower' && newUserId) {
             await db.execute(
-                'INSERT INTO borrowers (name, nrc, phone) VALUES (?, ?, ?) ON DUPLICATE KEY UPDATE phone = ?',
-                [name, nrc || null, phone || null, phone || null] 
+                'INSERT INTO borrowers (name, nrc, phone, dob) VALUES (?, ?, ?, ?) ON DUPLICATE KEY UPDATE phone = ?, dob = ?',
+                [name, nrc || null, phone || null, dob || null, phone || null, dob || null] 
             );
         }
 
@@ -207,6 +207,7 @@ exports.login = async (req, res) => {
                 email: user.email,
                 phone: user.phone,
                 nrc: user.nrc,
+                dob: user.dob,
                 lender_type: user.lender_type,
                 business_name: user.business_name,
                 referral_code: user.referral_code,
@@ -229,7 +230,7 @@ exports.login = async (req, res) => {
 exports.updateProfile = async (req, res) => {
     try {
         const userId = req.user.id;
-        const { name, phone, email, newPassword } = req.body;
+        const { name, phone, email, newPassword, dob } = req.body;
 
         const updates = [];
         const params = [];
@@ -237,6 +238,7 @@ exports.updateProfile = async (req, res) => {
         if (name) { updates.push('name = ?'); params.push(name); }
         if (phone) { updates.push('phone = ?'); params.push(phone); }
         if (email) { updates.push('email = ?'); params.push(email); }
+        if (dob) { updates.push('dob = ?'); params.push(dob); }
         
         if (newPassword) {
             const pwErrors = validatePassword(newPassword);
@@ -254,6 +256,14 @@ exports.updateProfile = async (req, res) => {
 
         params.push(userId);
         await db.execute(`UPDATE users SET ${updates.join(', ')} WHERE id = ?`, params);
+
+        // Also update borrowers table if it's a borrower
+        if (dob && req.user.role === 'borrower') {
+            const [u] = await db.execute('SELECT nrc FROM users WHERE id = ?', [userId]);
+            if (u.length > 0 && u[0].nrc) {
+                await db.execute('UPDATE borrowers SET dob = ? WHERE nrc = ?', [dob, u[0].nrc]);
+            }
+        }
 
         res.json({ message: 'Profile updated successfully' });
     } catch (error) {
@@ -280,6 +290,7 @@ exports.getMe = async (req, res) => {
             email: user.email,
             phone: user.phone,
             nrc: user.nrc,
+            dob: user.dob,
             lender_type: user.lender_type,
             business_name: user.business_name,
             referral_code: user.referral_code,

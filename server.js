@@ -21,11 +21,7 @@ if (!fs.existsSync(uploadDir)) {
 const app = express();
 const PORT = process.env.PORT || 5000;
 
-const allowedOrigins = [
-    'https://loanmanagements.kiaansoftware.com',
-    'http://localhost:5173',
-    'http://localhost:5174'
-];
+
 
 app.use(cors({
     origin: function (origin, callback) {
@@ -87,6 +83,15 @@ app.use((err, req, res, next) => {
 
 app.listen(PORT, async () => {
     console.log(`Server is running on port ${PORT}`);
+    
+    // Auto-migrate database schema
+    try {
+        const { syncSchema } = require('./config/schemaSync');
+        await syncSchema();
+    } catch (e) {
+        console.error('[DB-SYNC] Critical error during schema sync:', e.message);
+    }
+
     // Ensure collateral_upload_enabled setting exists in DB
     try {
         const db = require('./config/db');

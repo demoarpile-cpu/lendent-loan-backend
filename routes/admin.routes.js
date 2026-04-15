@@ -22,5 +22,6 @@ router.get('/lender/:id', protect, admin, adminController.getLenderDetails);
 router.get('/lender/:id/loans', protect, admin, adminController.getLenderLoans);
 router.get('/lenders/:id/loans', protect, admin, adminController.getLenderLoans);
 router.delete('/lenders/:id', protect, admin, adminController.deleteLender);
+router.delete('/borrowers/:id', protect, admin, adminController.deleteBorrower);
 
 module.exports = router;

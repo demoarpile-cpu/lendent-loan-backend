@@ -292,6 +292,36 @@ exports.deleteLender = async (req, res) => {
     }
 };
 
+// Admin - Delete Borrower
+exports.deleteBorrower = async (req, res) => {
+    try {
+        const { id } = req.params;
+
+        // 1. Get borrower info to find NRC (to delete associated user record)
+        const [borrower] = await db.execute('SELECT * FROM borrowers WHERE id = ?', [id]);
+        if (borrower.length === 0) return res.status(404).json({ message: 'Borrower not found' });
+
+        const nrc = borrower[0].nrc;
+
+        // 2. Audit log before delete
+        await db.execute('INSERT INTO audit_logs (action, user_id, details) VALUES (?, ?, ?)',
+            ['DELETE_BORROWER', req.user.id, `Deleted borrower: ${borrower[0].name} (ID: ${id}, NRC: ${nrc})`]);
+
+        // 3. Delete from borrowers table
+        await db.execute('DELETE FROM borrowers WHERE id = ?', [id]);
+
+        // 4. Delete associated user record if exists (role must be borrower)
+        if (nrc) {
+            await db.execute('DELETE FROM users WHERE nrc = ? AND role = "borrower"', [nrc]);
+        }
+
+        res.json({ message: 'Borrower deleted successfully' });
+    } catch (error) {
+        console.error('Delete Borrower Error:', error);
+        res.status(500).json({ message: 'Server error deleting borrower' });
+    }
+};
+
 // Admin - Get Single Lender Details
 // Get all loans for a specific lender (Admin view)
 exports.getLenderLoans = async (req, res) => {

@@ -10,6 +10,7 @@ CREATE TABLE IF NOT EXISTS users (
     phone VARCHAR(20) UNIQUE NOT NULL,
     email VARCHAR(255) UNIQUE,
     nrc VARCHAR(50) UNIQUE, -- Format: XXXXXX/XX/X (e.g. 123456/78/1)
+    dob DATE,
     password VARCHAR(255) NOT NULL,
     company_registration_number VARCHAR(100),
     business_name VARCHAR(255),
