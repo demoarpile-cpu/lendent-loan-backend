@@ -21,7 +21,13 @@ if (!fs.existsSync(uploadDir)) {
 const app = express();
 const PORT = process.env.PORT || 5000;
 
-
+const allowedOrigins = [
+    'http://localhost:5173',
+    'http://localhost:5174',
+    'https://localhost:5173',
+    'https://localhost:5174',
+    'https://loanmanagements.kiaansoftware.com'
+];
 
 app.use(cors({
     origin: function (origin, callback) {
