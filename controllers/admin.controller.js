@@ -78,7 +78,7 @@ exports.getAllBorrowers = async (req, res) => {
             if (score < 800) score = 800;
 
             let risk = 'GREEN';
-            if (score < 1000) risk = 'RED';
+            if (b.defaultCount > 0 || score < 1000) risk = 'RED';
             else if (score < 1200) risk = 'AMBER';
             
             return { ...b, risk, score };

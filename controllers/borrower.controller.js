@@ -147,7 +147,7 @@ exports.getLenderBorrowers = async (req, res) => {
 
              // Map Risk Level
              let risk = 'GREEN';
-             if (score < 1000) risk = 'RED';
+             if (b.totalDefaults > 0 || b.missedCount > 0 || score < 1000) risk = 'RED';
              else if (score < 1200) risk = 'AMBER';
              
              const result = { ...b, risk, score };
@@ -215,9 +215,9 @@ exports.getRiskSummary = async (req, res) => {
         score -= (stats[0].totalLoans * 10);
         if (score < 800) score = 800;
 
-        let riskLevel = 'Green';
-        if (score < 1000) riskLevel = 'Red';
-        else if (score < 1200) riskLevel = 'Amber';
+        let riskLevel = 'GREEN';
+        if (stats[0].defaultCount > 0 || missedCount > 0 || score < 1000) riskLevel = 'RED';
+        else if (score < 1200) riskLevel = 'AMBER';
 
         const response = {
             borrower: {

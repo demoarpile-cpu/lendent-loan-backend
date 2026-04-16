@@ -106,7 +106,7 @@ exports.searchBorrower = async (req, res) => {
                 [borrower.id]
             );
 
-            response.risk_status = stats[0].defaultCount > 0 ? 'RED' : (stats[0].activeLoans > 0 ? 'AMBER' : 'GREEN');
+            response.risk_status = (stats[0].defaultCount > 0 || lateRows[0].lateCount > 0) ? 'RED' : (stats[0].activeLoans > 0 ? 'AMBER' : 'GREEN');
             response.activeLoans = stats[0].activeLoans;
             response.total_defaults = stats[0].defaultCount;
             response.lateCount = lateRows[0].lateCount;

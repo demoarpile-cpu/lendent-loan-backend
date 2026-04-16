@@ -117,7 +117,7 @@ exports.getBorrowerStats = async (req, res) => {
         if (score < 800) score = 800;
 
         let riskLevel = 'GREEN';
-        if (score < 1000) riskLevel = 'RED';
+        if (counts[0].defaultedLoans > 0 || missedCount > 0 || score < 1000) riskLevel = 'RED';
         else if (score < 1200) riskLevel = 'AMBER';
 
         res.json({
