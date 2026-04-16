@@ -233,10 +233,22 @@ exports.updateProfile = async (req, res) => {
         const userId = req.user.id;
         const { name, phone, email, businessName, newPassword, dob } = req.body;
         
-        // Auto-migration check: Add profile_image_url if missing (one-time try)
+        // Robust Migration: Check if profile_image_url exists before adding it
         try {
-            await db.execute('ALTER TABLE users ADD COLUMN IF NOT EXISTS profile_image_url VARCHAR(255) DEFAULT NULL AFTER license_url');
-        } catch (e) { /* ignore if fails or already exists */ }
+            const [columns] = await db.execute(`
+                SELECT COLUMN_NAME 
+                FROM INFORMATION_SCHEMA.COLUMNS 
+                WHERE TABLE_NAME = 'users' 
+                AND COLUMN_NAME = 'profile_image_url'
+                AND TABLE_SCHEMA = DATABASE()
+            `);
+            if (columns.length === 0) {
+                await db.execute('ALTER TABLE users ADD COLUMN profile_image_url VARCHAR(255) DEFAULT NULL AFTER license_url');
+                console.log('Successfully added profile_image_url column');
+            }
+        } catch (e) { 
+            console.error('Migration Warning:', e.message);
+        }
 
         const updates = [];
         const params = [];
