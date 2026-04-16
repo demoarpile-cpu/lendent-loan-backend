@@ -21,6 +21,6 @@ router.post('/register', upload.any(), authController.register);
 router.post('/login', authController.login);
 router.get('/me', protect, authController.getMe);
 router.post('/verify-otp', authController.verifyOtp);
-router.put('/update-profile', protect, authController.updateProfile);
+router.put('/update-profile', protect, upload.any(), authController.updateProfile);
 
 module.exports = router;

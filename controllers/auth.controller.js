@@ -231,15 +231,39 @@ exports.updateProfile = async (req, res) => {
     try {
         const userId = req.user.id;
         const { name, phone, email, businessName, newPassword, dob } = req.body;
-        console.log('Update Profile Request:', { name, phone, email, businessName, dob });
+        
+        // Auto-migration check: Add profile_image_url if missing (one-time try)
+        try {
+            await db.execute('ALTER TABLE users ADD COLUMN IF NOT EXISTS profile_image_url VARCHAR(255) DEFAULT NULL AFTER license_url');
+        } catch (e) { /* ignore if fails or already exists */ }
 
         const updates = [];
         const params = [];
 
+        // Handling files
+        if (req.files && req.files.length > 0) {
+            const licenseFile = req.files.find(f => f.fieldname === 'license');
+            if (licenseFile) {
+                updates.push('license_url = ?');
+                params.push(`/uploads/${licenseFile.filename}`);
+            }
+            const profileFile = req.files.find(f => f.fieldname === 'profile_photo');
+            if (profileFile) {
+                updates.push('profile_image_url = ?');
+                params.push(`/uploads/${profileFile.filename}`);
+            }
+        }
+
         if (name) { updates.push('name = ?'); params.push(name); }
         if (phone) { updates.push('phone = ?'); params.push(phone); }
         if (email) { updates.push('email = ?'); params.push(email); }
-        if (businessName) { updates.push('business_name = ?'); params.push(businessName); }
+        
+        // Fix: Even if businessName is empty string, we should update it to allow clearing
+        if (businessName !== undefined) { 
+            updates.push('business_name = ?'); 
+            params.push(businessName || null); 
+        }
+        
         if (dob) { updates.push('dob = ?'); params.push(dob); }
         
         if (newPassword) {
@@ -281,6 +305,8 @@ exports.updateProfile = async (req, res) => {
                 lender_type: user.lender_type,
                 businessName: user.business_name,
                 business_name: user.business_name,
+                license_url: user.license_url,
+                profile_image_url: user.profile_image_url,
                 referral_code: user.referral_code,
                 referralCode: user.referral_code,
                 role: user.role,
