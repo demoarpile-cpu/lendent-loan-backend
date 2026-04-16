@@ -10,6 +10,7 @@ router.post('/remove-default', protect, admin, adminController.removeDefault);
 router.get('/borrowers', protect, admin, adminController.getAllBorrowers);
 router.post('/approve-borrower', protect, admin, adminController.approveBorrower);
 router.get('/loans', protect, admin, adminController.getAllLoans);
+router.post('/loans', protect, admin, adminController.createLoan);
 router.get('/audit-logs', protect, admin, adminController.getAuditLogs);
 router.get('/referrals', protect, admin, adminController.getReferrals);
 router.get('/membership-plans', protect, admin, adminController.getMembershipPlans);

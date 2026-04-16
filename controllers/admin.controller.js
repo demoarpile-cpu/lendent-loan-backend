@@ -350,6 +350,59 @@ exports.getLenderLoans = async (req, res) => {
     }
 };
 
+// Admin - Create Loan for a Lender
+exports.createLoan = async (req, res) => {
+    try {
+        const { borrowerId, lenderId, amount, interestRate, installmentsCount, type, issueDate, dueDate } = req.body;
+
+        if (!borrowerId || !lenderId || !amount) {
+            return res.status(400).json({ message: 'Borrower, Lender and Amount are required' });
+        }
+
+        const finalInterestRate = interestRate || 0;
+        const finalInstallmentsCount = installmentsCount || 3;
+        const finalIssueDate = issueDate || new Date().toISOString().split('T')[0];
+        
+        // Calculate due date if not provided (default to months count)
+        let finalDueDate = dueDate;
+        if (!finalDueDate) {
+            const d = new Date(finalIssueDate);
+            d.setMonth(d.getMonth() + finalInstallmentsCount);
+            finalDueDate = d.toISOString().split('T')[0];
+        }
+
+        // 1. Insert Loan
+        const [loanResult] = await db.execute(
+            'INSERT INTO loans (lender_id, borrower_id, amount, interest_rate, issue_date, due_date, type, created_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+            [lenderId, borrowerId, amount, finalInterestRate, finalIssueDate, finalDueDate, type, req.user.id]
+        );
+        const loanId = loanResult.insertId;
+
+        // 2. Generate Installments
+        const totalAmount = parseFloat(amount) + (parseFloat(amount) * (parseFloat(finalInterestRate) / 100));
+        const installmentAmount = totalAmount / finalInstallmentsCount;
+
+        for (let i = 1; i <= finalInstallmentsCount; i++) {
+            const installmentDueDate = new Date(finalIssueDate);
+            installmentDueDate.setMonth(installmentDueDate.getMonth() + i);
+
+            await db.execute(
+                'INSERT INTO loan_installments (loan_id, due_date, amount) VALUES (?, ?, ?)',
+                [loanId, installmentDueDate, installmentAmount]
+            );
+        }
+
+        // 3. Add Audit Log
+        await db.execute('INSERT INTO audit_logs (action, user_id, details) VALUES (?, ?, ?)',
+            ['CREATE_LOAN_ADMIN', req.user.id, `Admin created loan of K${amount} for borrower ${borrowerId} on behalf of lender ${lenderId}`]);
+
+        res.status(201).json({ message: 'Loan created successfully by Admin', loanId });
+    } catch (error) {
+        console.error('Admin Create Loan Error:', error);
+        res.status(500).json({ message: 'Server error creating loan' });
+    }
+};
+
 exports.getLenderDetails = async (req, res) => {
     try {
         const { id } = req.params;
