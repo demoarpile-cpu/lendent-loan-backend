@@ -217,6 +217,8 @@ exports.login = async (req, res) => {
                 status: user.status,
                 verificationStatus: user.verificationStatus || 'pending',
                 plan_type: user.plan_type || 'free',
+                profile_image_url: user.profile_image_url,
+                license_url: user.license_url,
                 plan_label: planLabel,
                 isPaid: user.plan_type !== 'free'
             }
