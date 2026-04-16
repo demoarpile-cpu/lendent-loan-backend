@@ -1,6 +1,25 @@
 const db = require('../config/db');
 
-// Create Loan and Generate Installments
+// Migration: Create loan_applications table if it doesn't exist
+const initMigration = async () => {
+    try {
+        await db.execute(`
+            CREATE TABLE IF NOT EXISTS loan_applications (
+                id INT AUTO_INCREMENT PRIMARY KEY,
+                borrower_id INT NOT NULL,
+                amount DECIMAL(15, 2) NOT NULL,
+                purpose TEXT,
+                status ENUM('pending', 'approved', 'rejected') DEFAULT 'pending',
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (borrower_id) REFERENCES borrowers(id)
+            )
+        `);
+        console.log('[MIGRATION] loan_applications table is ready');
+    } catch (err) {
+        console.error('[MIGRATION ERROR]', err);
+    }
+};
+initMigration();
 exports.createLoan = async (req, res) => {
     try {
         const { borrowerId, borrower_id, amount, interestRate, interest_rate, issueDate, issue_date, dueDate, due_date, type, installmentsCount, installments, guarantorName, guarantorPhone, guarantorNrc, lender_id, admin_override } = req.body;
@@ -359,5 +378,86 @@ exports.getMyLoans = async (req, res) => {
     } catch (error) {
         console.error(error);
         res.status(500).json({ message: 'Server error' });
+    }
+};
+
+// Borrower: Apply for a Loan
+exports.applyLoan = async (req, res) => {
+    try {
+        const userId = req.user.id;
+        const { amount, purpose } = req.body;
+
+        // 1. Find Borrower ID from NRC
+        const [user] = await db.execute('SELECT nrc FROM users WHERE id = ?', [userId]);
+        if (user.length === 0) return res.status(404).json({ message: 'User not found' });
+
+        const [borrowerRecord] = await db.execute('SELECT id FROM borrowers WHERE nrc = ?', [user[0].nrc]);
+        if (borrowerRecord.length === 0) {
+            return res.status(403).json({ message: 'You must complete your borrower profile before applying.' });
+        }
+
+        const borrowerId = borrowerRecord[0].id;
+
+        // 2. Insert Application
+        const [result] = await db.execute(
+            'INSERT INTO loan_applications (borrower_id, amount, purpose) VALUES (?, ?, ?)',
+            [borrowerId, amount || 15000, purpose || 'Credit Request from Portal']
+        );
+
+        // 3. Audit log
+        await db.execute('INSERT INTO audit_logs (action, user_id, entity_type, entity_id, details) VALUES (?, ?, ?, ?, ?)',
+            ['APPLY_LOAN', userId, 'loan_application', result.insertId, `Borrower requested K${amount}`]);
+
+        res.status(201).json({ 
+            message: 'Loan application submitted successfully! Our team will review it shortly.',
+            applicationId: result.insertId 
+        });
+    } catch (error) {
+        console.error('[APPLY LOAN ERROR]', error);
+        res.status(500).json({ message: 'Server error submitting application' });
+    }
+};
+
+// Get All Applications (for Admin/Lender)
+exports.getApplications = async (req, res) => {
+    try {
+        const [apps] = await db.execute(`
+            SELECT a.*, b.name as borrowerName, b.nrc as borrowerNRC, u.phone as borrowerPhone
+            FROM loan_applications a
+            JOIN borrowers b ON a.borrower_id = b.id
+            JOIN users u ON b.nrc = u.nrc
+            ORDER BY a.created_at DESC
+        `);
+        res.json(apps);
+    } catch (error) {
+        console.error(error);
+        res.status(500).json({ message: 'Server error fetching applications' });
+    }
+};
+
+// Update Application Status (Approve/Reject)
+exports.updateApplicationStatus = async (req, res) => {
+    try {
+        const { id } = req.params;
+        const { status } = req.body; // 'approved' or 'rejected'
+
+        if (!['approved', 'rejected'].includes(status)) {
+            return res.status(400).json({ message: 'Invalid status' });
+        }
+
+        // 1. Update status
+        await db.execute(
+            'UPDATE loan_applications SET status = ? WHERE id = ?',
+            [status, id]
+        );
+
+        // 2. Audit log
+        await db.execute('INSERT INTO audit_logs (action, user_id, entity_type, entity_id, details) VALUES (?, ?, ?, ?, ?)',
+            ['UPDATE_APPLICATION_STATUS', req.user.id, 'loan_application', id, `Status updated to ${status} for application ID: ${id}`]);
+
+        res.json({ message: `Application ${status} successfully!` });
+    } catch (error) {
+        console.error(error);
+        res.status(500).json({ message: 'Server error updating status' });
     }
 };

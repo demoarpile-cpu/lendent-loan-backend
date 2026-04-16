@@ -23,4 +23,9 @@ router.get('/:id/collateral', protect, loanController.getCollaterals);
 router.get('/my-loans', protect, loanController.getMyLoans);
 router.get('/lender-defaults', protect, loanController.getLenderDefaults);
 
+// Loan Applications
+router.post('/apply', protect, loanController.applyLoan);
+router.get('/applications', protect, loanController.getApplications);
+router.put('/applications/:id/status', protect, loanController.updateApplicationStatus);
+
 module.exports = router;
