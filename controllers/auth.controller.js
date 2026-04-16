@@ -230,7 +230,8 @@ exports.login = async (req, res) => {
 exports.updateProfile = async (req, res) => {
     try {
         const userId = req.user.id;
-        const { name, phone, email, newPassword, dob } = req.body;
+        const { name, phone, email, businessName, newPassword, dob } = req.body;
+        console.log('Update Profile Request:', { name, phone, email, businessName, dob });
 
         const updates = [];
         const params = [];
@@ -238,6 +239,7 @@ exports.updateProfile = async (req, res) => {
         if (name) { updates.push('name = ?'); params.push(name); }
         if (phone) { updates.push('phone = ?'); params.push(phone); }
         if (email) { updates.push('email = ?'); params.push(email); }
+        if (businessName) { updates.push('business_name = ?'); params.push(businessName); }
         if (dob) { updates.push('dob = ?'); params.push(dob); }
         
         if (newPassword) {
@@ -257,17 +259,39 @@ exports.updateProfile = async (req, res) => {
         params.push(userId);
         await db.execute(`UPDATE users SET ${updates.join(', ')} WHERE id = ?`, params);
 
+        // Fetch fresh user data
+        const [users] = await db.execute('SELECT * FROM users WHERE id = ?', [userId]);
+        const user = users[0];
+
         // Also update borrowers table if it's a borrower
-        if (dob && req.user.role === 'borrower') {
-            const [u] = await db.execute('SELECT nrc FROM users WHERE id = ?', [userId]);
-            if (u.length > 0 && u[0].nrc) {
-                await db.execute('UPDATE borrowers SET dob = ? WHERE nrc = ?', [dob, u[0].nrc]);
-            }
+        if (dob && user.role === 'borrower' && user.nrc) {
+            await db.execute('UPDATE borrowers SET dob = ? WHERE nrc = ?', [dob, user.nrc]);
         }
 
-        res.json({ message: 'Profile updated successfully' });
+        res.json({ 
+            message: 'Profile updated successfully',
+            user: {
+                id: user.id,
+                lender_id: user.lender_id,
+                name: user.name,
+                email: user.email,
+                phone: user.phone,
+                nrc: user.nrc,
+                dob: user.dob,
+                lender_type: user.lender_type,
+                businessName: user.business_name,
+                business_name: user.business_name,
+                referral_code: user.referral_code,
+                referralCode: user.referral_code,
+                role: user.role,
+                status: user.status,
+                verificationStatus: user.verificationStatus || 'pending',
+                plan_type: user.plan_type || 'free',
+                isPaid: user.plan_type !== 'free'
+            }
+        });
     } catch (error) {
-        console.error(error);
+        console.error('Update Profile Error:', error);
         res.status(500).json({ message: 'Server error updating profile' });
     }
 };
