@@ -84,8 +84,9 @@ exports.addPayment = async (req, res) => {
             );
         }
 
-        // 3. Check if all paid → update loan status
-        const [unpaid] = await db.execute('SELECT id FROM loan_installments WHERE loan_id = ? AND status = "pending"', [id]);
+        // 3. Check if all paid → update loan status (Checking for both pending and missed)
+        const [unpaid] = await db.execute('SELECT id FROM loan_installments WHERE loan_id = ? AND (status = "pending" OR status = "missed")', [id]);
+
         if (unpaid.length === 0) {
             await db.execute('UPDATE loans SET status = "paid" WHERE id = ?', [id]);
         }
