@@ -1,63 +1,59 @@
 const db = require('../config/db');
+const bcrypt = require('bcryptjs');
 
 // Add or Reuse Borrower
 exports.addBorrower = async (req, res) => {
     try {
-        const { name, nrc, email, phone, dob } = req.body;
+        const { name, nrc, email, phone, dob, password } = req.body;
         let photoUrl = null;
         let nrcUrl = null;
+
         if (req.files) {
             const photoFile = req.files.find(f => f.fieldname === 'photo');
             if (photoFile) photoUrl = `/uploads/${photoFile.filename}`;
             const nrcFile = req.files.find(f => f.fieldname === 'nrc_document');
             if (nrcFile) nrcUrl = `/uploads/${nrcFile.filename}`;
-        } else if (req.file) {
-            photoUrl = `/uploads/${req.file.filename}`;
         }
-        const lenderId = req.user.id; // From JWT
+        const lenderId = req.user.id;
 
-        // 1. Check if borrower exists by NRC
-        let [existing] = await db.execute('SELECT * FROM borrowers WHERE nrc = ?', [nrc]);
-
-        if (existing.length > 0) {
-            const borrower = existing[0];
-            
-            // 2. Check if already linked to this lender
-            const [link] = await db.execute(
-                'SELECT * FROM lender_borrowers WHERE lender_id = ? AND borrower_id = ?',
-                [lenderId, borrower.id]
-            );
-
-            if (link.length > 0) {
-                return res.status(200).json({ 
-                    message: 'Borrower already exists in your ledger.',
-                    borrower_id: borrower.id
-                });
-            }
-
-            // 3. Return confirmation request
-            return res.status(200).json({
-                exists: true,
-                message: 'Borrower already exists. Please confirm before adding.',
-                borrower: {
-                    id: borrower.id,
-                    name: borrower.name,
-                    date_of_birth: borrower.dob,
-                    profile_picture: borrower.photo_url
-                }
+        // 1. Check if borrower exists by NRC in borrowers table
+        let [existingB] = await db.execute('SELECT * FROM borrowers WHERE nrc = ?', [nrc]);
+        if (existingB.length > 0) {
+            return res.status(400).json({ 
+                message: `NRC ${nrc} is already registered in the system.` 
             });
         }
 
-        // 4. Create new borrower (if not exists)
+        // 2. Insert into borrowers table
         const [result] = await db.execute(
-            'INSERT INTO borrowers (name, nrc, email, phone, dob, photo_url, nrc_url) VALUES (?, ?, ?, ?, ?, ?, ?)',
-            [name || null, nrc || null, email || null, phone || null, dob || null, photoUrl || null, nrcUrl || null]
+            'INSERT INTO borrowers (name, nrc, email, phone, dob, photo_url, nrc_url, verificationStatus) VALUES (?, ?, ?, ?, ?, ?, ?, "pending")',
+            [name, nrc, email || null, phone, dob || null, photoUrl, nrcUrl]
         );
         const borrowerId = result.insertId;
 
-        // 5. Link to lender immediately for new borrowers
+        // 3. Create User Account if password is provided
+        if (password) {
+            const hashedPassword = await bcrypt.hash(password, 10);
+            const referralCode = name.substring(0, 3).toUpperCase() + Math.floor(1000 + Math.random() * 9000);
+
+            // Check if user already exists (by phone, email or NRC)
+            const [existingU] = await db.execute(
+                'SELECT * FROM users WHERE phone = ? OR (email IS NOT NULL AND email = ?) OR nrc = ?',
+                [phone, email || '---', nrc]
+            );
+
+            if (existingU.length === 0) {
+                await db.execute(
+                    'INSERT INTO users (name, phone, email, nrc, password, role, status, verificationStatus, referral_code, profile_image_url, license_url) VALUES (?, ?, ?, ?, ?, "borrower", "pending", "pending", ?, ?, ?)',
+                    [name, phone, email || null, nrc, hashedPassword, referralCode, photoUrl, nrcUrl]
+                );
+            }
+        }
+
+
+        // 4. Link to lender
         await db.execute(
-            'INSERT INTO lender_borrowers (lender_id, borrower_id) VALUES (?, ?)',
+            'INSERT IGNORE INTO lender_borrowers (lender_id, borrower_id) VALUES (?, ?)',
             [lenderId, borrowerId]
         );
 
@@ -68,14 +64,12 @@ exports.addBorrower = async (req, res) => {
     } catch (error) {
         console.error('Add Borrower Error:', error);
         if (error.code === 'ER_DUP_ENTRY') {
-            const field = error.sqlMessage.includes('email') ? 'Email'
-                        : error.sqlMessage.includes('nrc') ? 'NRC'
-                        : error.sqlMessage.includes('phone') ? 'Phone' : 'Entry';
-            return res.status(400).json({ message: `${field} already exists. Please use a different ${field.toLowerCase()}.` });
+            return res.status(400).json({ message: 'A borrower with this Phone or Email already exists.' });
         }
         res.status(500).json({ message: 'Server error adding borrower' });
     }
 };
+
 
 // Confirm and Attach Existing Borrower to Lender Ledger
 exports.confirmAddBorrower = async (req, res) => {
@@ -295,19 +289,72 @@ exports.enableLogin = async (req, res) => {
 exports.updateBorrower = async (req, res) => {
     try {
         const { id } = req.params;
-        const { name, phone, email, dob } = req.body;
+        const { name, phone, email, dob, nrc, password } = req.body;
         
-        await db.execute(
-            'UPDATE borrowers SET name = ?, phone = ?, email = ?, dob = ? WHERE id = ?',
-            [name, phone, email || null, dob || null, id]
-        );
+        // 1. Get current borrower info
+        const [current] = await db.execute('SELECT nrc FROM borrowers WHERE id = ?', [id]);
+        if (current.length === 0) return res.status(404).json({ message: 'Borrower not found' });
+        const oldNrc = current[0].nrc;
 
-        res.json({ message: 'Borrower updated successfully' });
+        let photoUrl = null;
+        let nrcUrl = null;
+
+        if (req.files) {
+            const photoFile = req.files.find(f => f.fieldname === 'photo');
+            if (photoFile) photoUrl = `/uploads/${photoFile.filename}`;
+            const nrcFile = req.files.find(f => f.fieldname === 'nrc_document');
+            if (nrcFile) nrcUrl = `/uploads/${nrcFile.filename}`;
+        }
+
+        const updates = [];
+        const params = [];
+
+        if (name) { updates.push('name = ?'); params.push(name); }
+        if (phone) { updates.push('phone = ?'); params.push(phone); }
+        if (email) { updates.push('email = ?'); params.push(email); }
+        if (dob) { updates.push('dob = ?'); params.push(dob); }
+        if (nrc) { updates.push('nrc = ?'); params.push(nrc); }
+        if (photoUrl) { updates.push('photo_url = ?'); params.push(photoUrl); }
+        if (nrcUrl) { updates.push('nrc_url = ?'); params.push(nrcUrl); }
+
+        if (updates.length > 0) {
+            params.push(id);
+            await db.execute(`UPDATE borrowers SET ${updates.join(', ')} WHERE id = ?`, params);
+        }
+
+        // 2. Sync with Users table (if account exists)
+        const [userExists] = await db.execute('SELECT id FROM users WHERE nrc = ? AND role = "borrower"', [oldNrc]);
+        if (userExists.length > 0) {
+            const userId = userExists[0].id;
+            const userUpdates = [];
+            const userParams = [];
+
+            if (name) { userUpdates.push('name = ?'); userParams.push(name); }
+            if (phone) { userUpdates.push('phone = ?'); userParams.push(phone); }
+            if (email) { userUpdates.push('email = ?'); userParams.push(email); }
+            if (nrc) { userUpdates.push('nrc = ?'); userParams.push(nrc); }
+            if (photoUrl) { userUpdates.push('profile_image_url = ?'); userParams.push(photoUrl); }
+            if (nrcUrl) { userUpdates.push('license_url = ?'); userParams.push(nrcUrl); }
+            
+            if (password) {
+                const hashedPassword = await bcrypt.hash(password, 10);
+                userUpdates.push('password = ?');
+                userParams.push(hashedPassword);
+            }
+
+            if (userUpdates.length > 0) {
+                userParams.push(userId);
+                await db.execute(`UPDATE users SET ${userUpdates.join(', ')} WHERE id = ?`, userParams);
+            }
+        }
+
+        res.json({ message: 'Borrower and associated user account updated successfully' });
     } catch (error) {
-        console.error(error);
+        console.error('Update Borrower Error:', error);
         res.status(500).json({ message: 'Server error updating borrower' });
     }
 };
+
 
 // Delete Borrower
 exports.deleteBorrower = async (req, res) => {

@@ -16,7 +16,7 @@ router.post('/confirm-add', protect, borrowerController.confirmAddBorrower);
 router.get('/', protect, borrowerController.getLenderBorrowers);
 router.post('/:id/enable-login', protect, borrowerController.enableLogin);
 router.get('/:id/risk', protect, borrowerController.getRiskSummary);
-router.put('/:id', protect, borrowerController.updateBorrower);
+router.put('/:id', protect, upload.any(), borrowerController.updateBorrower);
 router.delete('/:id', protect, borrowerController.deleteBorrower);
 
 module.exports = router;
