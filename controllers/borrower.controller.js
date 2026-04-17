@@ -240,9 +240,9 @@ exports.getRiskSummary = async (req, res) => {
         res.status(500).json({ message: 'Server error' });
     }
 };
-const bcrypt = require('bcryptjs');
 
 // Enable login for a borrower
+
 exports.enableLogin = async (req, res) => {
     try {
         const { id } = req.params;
