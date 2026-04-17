@@ -302,10 +302,27 @@ exports.updateProfile = async (req, res) => {
         const [users] = await db.execute('SELECT * FROM users WHERE id = ?', [userId]);
         const user = users[0];
 
-        // Also update borrowers table if it's a borrower
-        if (dob && user.role === 'borrower' && user.nrc) {
-            await db.execute('UPDATE borrowers SET dob = ? WHERE nrc = ?', [dob, user.nrc]);
+        // Also update borrowers table if it's a borrower and we have an NRC
+        if (user.role === 'borrower' && user.nrc) {
+            const bUpdates = [];
+            const bParams = [];
+            
+            if (name) { bUpdates.push('name = ?'); bParams.push(name); }
+            if (phone) { bUpdates.push('phone = ?'); bParams.push(phone); }
+            if (email) { bUpdates.push('email = ?'); bParams.push(email); }
+            if (dob) { bUpdates.push('dob = ?'); bParams.push(dob); }
+            
+            // Sync URLs
+            if (user.profile_image_url) { bUpdates.push('photo_url = ?'); bParams.push(user.profile_image_url); }
+            if (user.license_url) { bUpdates.push('nrc_url = ?'); bParams.push(user.license_url); }
+            
+            if (bUpdates.length > 0) {
+                bParams.push(user.nrc);
+                await db.execute(`UPDATE borrowers SET ${bUpdates.join(', ')} WHERE nrc = ?`, bParams);
+                console.log('Synchronized borrower profile data for NRC:', user.nrc);
+            }
         }
+
 
         res.json({ 
             message: 'Profile updated successfully',

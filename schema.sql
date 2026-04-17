@@ -183,7 +183,8 @@ CREATE TABLE IF NOT EXISTS collaterals (
 
 -- 14. Default Admin User (Password: admin123)
 INSERT IGNORE INTO users (name, phone, email, password, role, status, verificationStatus) 
-VALUES ('Super Admin', '0999999999', 'admin@lendanet.com', '$2b$10$BHJKjkE2AUZzvHbmXlIbSOlOZupGimzqmLZHfVDK1eY8wC.re6rtm', 'admin', 'active', 'verified');
+VALUES ('Admin', '0999999999', 'admin@gmail.com', '$2b$10$ew.KROjOoIyJG1miCQRto.OrdyRR35reMILQgOJDOMlPMGn4lo6s6', 'admin', 'active', 'verified');
+
 
 -- 15. System Settings
 CREATE TABLE IF NOT EXISTS system_settings (
