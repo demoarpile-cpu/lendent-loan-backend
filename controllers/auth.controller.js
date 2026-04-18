@@ -31,6 +31,7 @@ exports.register = async (req, res) => {
 
         let licenseUrl = null;
         let nrcUrl = null;
+        let profileImageUrl = null;
         if (req.files && req.files.length > 0) {
             const licenseFile = req.files.find(f => f.fieldname === 'license');
             if (licenseFile) {
@@ -39,6 +40,10 @@ exports.register = async (req, res) => {
             const nrcFile = req.files.find(f => f.fieldname === 'nrc_document');
             if (nrcFile) {
                 nrcUrl = `/uploads/${nrcFile.filename}`;
+            }
+            const photoFile = req.files.find(f => f.fieldname === 'photo');
+            if (photoFile) {
+                profileImageUrl = `/uploads/${photoFile.filename}`;
             }
         }
 
@@ -113,16 +118,16 @@ exports.register = async (req, res) => {
         const finalPlanType = planType || 'free';
         const finalMembershipTier = finalPlanType !== 'free' ? 'premium' : 'free';
         const [result] = await db.execute(
-            'INSERT INTO users (name, phone, email, nrc, dob, company_registration_number, password, business_name, lender_type, lender_id, license_url, nrc_url, referral_code, role, status, membership_tier, plan_type) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
-            [name, phone, email || null, nrc || null, dob || null, companyRegistrationNumber || null, hashedPassword, businessName || null, role === 'lender' ? lenderType : null, generatedLenderId, licenseUrl || null, nrcUrl || null, userReferralCode, role, initialStatus, finalMembershipTier, finalPlanType]
+            'INSERT INTO users (name, phone, email, nrc, dob, company_registration_number, password, business_name, lender_type, lender_id, license_url, nrc_url, profile_image_url, referral_code, role, status, membership_tier, plan_type) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+            [name, phone, email || null, nrc || null, dob || null, companyRegistrationNumber || null, hashedPassword, businessName || null, role === 'lender' ? lenderType : null, generatedLenderId, licenseUrl || null, nrcUrl || null, profileImageUrl || null, userReferralCode, role, initialStatus, finalMembershipTier, finalPlanType]
         );
 
         const newUserId = result.insertId || null;
         // 5. If it is a borrower, we should also create a borrower profile
         if (role === 'borrower' && newUserId) {
             await db.execute(
-                'INSERT INTO borrowers (name, nrc, phone, dob) VALUES (?, ?, ?, ?) ON DUPLICATE KEY UPDATE phone = ?, dob = ?',
-                [name, nrc || null, phone || null, dob || null, phone || null, dob || null] 
+                'INSERT INTO borrowers (name, nrc, email, phone, dob, photo_url, nrc_url) VALUES (?, ?, ?, ?, ?, ?, ?) ON DUPLICATE KEY UPDATE phone = ?, dob = ?, photo_url = ?, nrc_url = ?',
+                [name, nrc || null, email || null, phone || null, dob || null, profileImageUrl || null, nrcUrl || null, phone || null, dob || null, profileImageUrl || null, nrcUrl || null] 
             );
         }
 
