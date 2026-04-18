@@ -40,6 +40,8 @@ exports.register = async (req, res) => {
             const nrcFile = req.files.find(f => f.fieldname === 'nrc_document');
             if (nrcFile) {
                 nrcUrl = `/uploads/${nrcFile.filename}`;
+                // For borrowers, NRC document serves as the primary identification proof (license_url)
+                if (role === 'borrower') licenseUrl = nrcUrl;
             }
             const photoFile = req.files.find(f => f.fieldname === 'photo');
             if (photoFile) {
@@ -223,7 +225,7 @@ exports.login = async (req, res) => {
                 verificationStatus: user.verificationStatus || 'pending',
                 plan_type: user.plan_type || 'free',
                 profile_image_url: user.profile_image_url,
-                license_url: user.license_url,
+                license_url: user.license_url || user.nrc_url,
                 plan_label: planLabel,
                 isPaid: user.plan_type !== 'free'
             }
@@ -387,7 +389,7 @@ exports.getMe = async (req, res) => {
             status: user.status,
             verificationStatus: user.verificationStatus || 'pending',
             plan_type: user.plan_type || 'free',
-            license_url: user.license_url,
+            license_url: user.license_url || user.nrc_url,
             profile_image_url: user.profile_image_url,
             plan_label: planLabel,
             isPaid: user.plan_type !== 'free'
