@@ -225,7 +225,8 @@ exports.login = async (req, res) => {
                 verificationStatus: user.verificationStatus || 'pending',
                 plan_type: user.plan_type || 'free',
                 profile_image_url: user.profile_image_url,
-                license_url: user.license_url || user.nrc_url,
+                license_url: user.license_url,
+                nrc_url: user.nrc_url,
                 plan_label: planLabel,
                 isPaid: user.plan_type !== 'free'
             }
@@ -268,6 +269,11 @@ exports.updateProfile = async (req, res) => {
             if (licenseFile) {
                 updates.push('license_url = ?');
                 params.push(`/uploads/${licenseFile.filename}`);
+            }
+            const nrcFile = req.files.find(f => f.fieldname === 'nrc_document');
+            if (nrcFile) {
+                updates.push('nrc_url = ?');
+                params.push(`/uploads/${nrcFile.filename}`);
             }
             const profileFile = req.files.find(f => f.fieldname === 'profile_photo');
             if (profileFile) {
@@ -345,6 +351,7 @@ exports.updateProfile = async (req, res) => {
                 businessName: user.business_name,
                 business_name: user.business_name,
                 license_url: user.license_url,
+                nrc_url: user.nrc_url,
                 profile_image_url: user.profile_image_url,
                 referral_code: user.referral_code,
                 referralCode: user.referral_code,
@@ -389,7 +396,8 @@ exports.getMe = async (req, res) => {
             status: user.status,
             verificationStatus: user.verificationStatus || 'pending',
             plan_type: user.plan_type || 'free',
-            license_url: user.license_url || user.nrc_url,
+            license_url: user.license_url,
+            nrc_url: user.nrc_url,
             profile_image_url: user.profile_image_url,
             plan_label: planLabel,
             isPaid: user.plan_type !== 'free'
