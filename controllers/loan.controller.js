@@ -68,12 +68,12 @@ exports.createLoan = async (req, res) => {
 exports.addPayment = async (req, res) => {
     try {
         const { id } = req.params; // Loan ID
-        const { amount, method, installmentId } = req.body;
+        const { amount, method, installmentId, reference } = req.body;
 
         // 1. Add Payment Record
         await db.execute(
-            'INSERT INTO payments (loan_id, installment_id, amount, method) VALUES (?, ?, ?, ?)',
-            [id, installmentId || null, amount, method]
+            'INSERT INTO payments (loan_id, installment_id, amount, method, reference) VALUES (?, ?, ?, ?, ?)',
+            [id, installmentId || null, amount, method, reference || null]
         );
 
         // 2. Update Installment Status if applicable
@@ -359,7 +359,8 @@ exports.getMyLoans = async (req, res) => {
         if (borrowerRecord.length === 0) return res.json([]);
 
         const [loans] = await db.execute(
-            `SELECT l.*, u.name as lenderName, u.phone as lenderPhone, u.email as lenderEmail, u.business_name as lenderBusiness
+            `SELECT l.*, u.name as lenderName, u.phone as lenderPhone, u.email as lenderEmail, u.business_name as lenderBusiness,
+                    u.airtel_money_number, u.mtn_money_number, u.zamtel_money_number, u.bank_name, u.bank_account_number, u.bank_account_name
              FROM loans l
              JOIN users u ON l.lender_id = u.id
              WHERE l.borrower_id = ?`,

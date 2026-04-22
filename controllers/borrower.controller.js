@@ -17,10 +17,11 @@ exports.addBorrower = async (req, res) => {
         const lenderId = req.user.id;
 
         // 1. Check if borrower exists by NRC in borrowers table
-        let [existingB] = await db.execute('SELECT * FROM borrowers WHERE nrc = ?', [nrc]);
+        let [existingB] = await db.execute('SELECT id, name, nrc FROM borrowers WHERE nrc = ?', [nrc]);
         if (existingB.length > 0) {
-            return res.status(400).json({ 
-                message: `NRC ${nrc} is already registered in the system.` 
+            return res.status(409).json({ 
+                message: `NRC ${nrc} is already registered on the network.`,
+                existingBorrower: existingB[0]
             });
         }
 
@@ -130,21 +131,12 @@ exports.getLenderBorrowers = async (req, res) => {
 
         // 4. Map risk and filter sensitive data
         const formatted = borrowers.map(b => {
-             // 4. Calculate Dynamic Credit Score (800 - 1400)
-             let score = 1400;
-             score -= (b.totalDefaults * 150);
-             score -= (b.missedCount * 100);
-             score -= (b.totalLoans * 10); // Slight reduction for exposure
-             
-             // Ensure score floor
-             if (score < 800) score = 800;
-
              // Map Risk Level
              let risk = 'GREEN';
-             if (b.totalDefaults > 0 || b.missedCount > 0 || score < 1000) risk = 'RED';
-             else if (score < 1200) risk = 'AMBER';
+             if (b.totalDefaults > 0 || b.missedCount > 0) risk = 'RED';
+             else if (b.totalLoans > 5) risk = 'AMBER';
              
-             const result = { ...b, risk, score };
+             const result = { ...b, risk };
              
              // If free tier, hide risk level if required (though user said free user can add/manage borrowers)
              // But user also said "Restrict: Risk score, Advanced data, Default ledger"
@@ -203,15 +195,9 @@ exports.getRiskSummary = async (req, res) => {
         );
         const missedCount = missed[0].missedCount;
 
-        let score = 1400;
-        score -= (stats[0].defaultCount * 150);
-        score -= (missedCount * 100);
-        score -= (stats[0].totalLoans * 10);
-        if (score < 800) score = 800;
-
         let riskLevel = 'GREEN';
-        if (stats[0].defaultCount > 0 || missedCount > 0 || score < 1000) riskLevel = 'RED';
-        else if (score < 1200) riskLevel = 'AMBER';
+        if (stats[0].defaultCount > 0 || missedCount > 0) riskLevel = 'RED';
+        else if (stats[0].totalLoans > 5) riskLevel = 'AMBER';
 
         const response = {
             borrower: {
@@ -228,7 +214,6 @@ exports.getRiskSummary = async (req, res) => {
             response.message = 'Upgrade to Premium to view risk data.';
         } else {
             response.riskLevel = riskLevel;
-            response.creditScore = score;
             response.totalLoans = stats[0].totalLoans;
             response.activeLoans = stats[0].activeLoans;
             response.defaultCount = stats[0].defaultCount;

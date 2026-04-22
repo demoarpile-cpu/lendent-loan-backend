@@ -228,7 +228,13 @@ exports.login = async (req, res) => {
                 license_url: user.license_url,
                 nrc_url: user.nrc_url,
                 plan_label: planLabel,
-                isPaid: user.plan_type !== 'free'
+                isPaid: user.plan_type !== 'free',
+                airtel_money_number: user.airtel_money_number,
+                mtn_money_number: user.mtn_money_number,
+                zamtel_money_number: user.zamtel_money_number,
+                bank_name: user.bank_name,
+                bank_account_number: user.bank_account_number,
+                bank_account_name: user.bank_account_name
             }
         });
     } catch (error) {
@@ -241,7 +247,7 @@ exports.login = async (req, res) => {
 exports.updateProfile = async (req, res) => {
     try {
         const userId = req.user.id;
-        const { name, phone, email, businessName, newPassword, dob } = req.body;
+        const { name, phone, email, businessName, newPassword, dob, airtel_money_number, mtn_money_number, zamtel_money_number, bank_name, bank_account_number, bank_account_name } = req.body;
         
         // Robust Migration: Check if profile_image_url exists before adding it
         try {
@@ -304,6 +310,15 @@ exports.updateProfile = async (req, res) => {
             params.push(hashedPassword);
         }
 
+        // Payment Info Updates
+        if (airtel_money_number !== undefined) { updates.push('airtel_money_number = ?'); params.push(airtel_money_number || null); }
+        if (mtn_money_number !== undefined) { updates.push('mtn_money_number = ?'); params.push(mtn_money_number || null); }
+        if (zamtel_money_number !== undefined) { updates.push('zamtel_money_number = ?'); params.push(zamtel_money_number || null); }
+        if (bank_name !== undefined) { updates.push('bank_name = ?'); params.push(bank_name || null); }
+        if (bank_account_number !== undefined) { updates.push('bank_account_number = ?'); params.push(bank_account_number || null); }
+        if (bank_account_name !== undefined) { updates.push('bank_account_name = ?'); params.push(bank_account_name || null); }
+
+
         if (updates.length === 0) {
             return res.status(400).json({ message: 'No fields to update' });
         }
@@ -359,7 +374,13 @@ exports.updateProfile = async (req, res) => {
                 status: user.status,
                 verificationStatus: user.verificationStatus || 'pending',
                 plan_type: user.plan_type || 'free',
-                isPaid: user.plan_type !== 'free'
+                isPaid: user.plan_type !== 'free',
+                airtel_money_number: user.airtel_money_number,
+                mtn_money_number: user.mtn_money_number,
+                zamtel_money_number: user.zamtel_money_number,
+                bank_name: user.bank_name,
+                bank_account_number: user.bank_account_number,
+                bank_account_name: user.bank_account_name
             }
         });
     } catch (error) {
@@ -400,7 +421,13 @@ exports.getMe = async (req, res) => {
             nrc_url: user.nrc_url,
             profile_image_url: user.profile_image_url,
             plan_label: planLabel,
-            isPaid: user.plan_type !== 'free'
+            isPaid: user.plan_type !== 'free',
+            airtel_money_number: user.airtel_money_number,
+            mtn_money_number: user.mtn_money_number,
+            zamtel_money_number: user.zamtel_money_number,
+            bank_name: user.bank_name,
+            bank_account_number: user.bank_account_number,
+            bank_account_name: user.bank_account_name
         });
     } catch (error) {
         console.error(error);

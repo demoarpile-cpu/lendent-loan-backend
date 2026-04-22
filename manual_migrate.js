@@ -119,9 +119,21 @@ async function migrate() {
         // 10. Add collateral_upload_enabled setting
         await db.query(`
             INSERT IGNORE INTO system_settings (setting_key, setting_value)
-            VALUES ('collateral_upload_enabled', 'true')
+            VALUES 
+            ('collateral_upload_enabled', 'true'),
+            ('online_payment_gateway_enabled', 'false'),
+            ('bank_name', ''),
+            ('bank_account_number', ''),
+            ('bank_account_name', ''),
+            ('bank_ifsc_code', '')
         `);
-        console.log("Added collateral_upload_enabled setting");
+        console.log("Added payment and collateral settings");
+
+        // 11. Add reference column to payments
+        try {
+            await db.query("ALTER TABLE payments ADD COLUMN reference VARCHAR(255) AFTER method");
+            console.log("Added reference column to payments");
+        } catch(e) { console.log("reference column might exist:", e.message); }
 
         console.log("Migration complete!");
         process.exit(0);
