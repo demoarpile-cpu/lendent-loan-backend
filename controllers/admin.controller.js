@@ -69,19 +69,13 @@ exports.getAllBorrowers = async (req, res) => {
             LEFT JOIN users u ON b.nrc = u.nrc AND u.role = 'borrower'
         `);
 
-        // 3. Map risk level using score (800 - 1400)
+        // 3. Map risk level
         const formatted = borrowers.map(b => {
-            let score = 1400;
-            score -= (b.defaultCount * 150);
-            score -= (b.missedCount * 100);
-            score -= (b.totalLoans * 10);
-            if (score < 800) score = 800;
-
             let risk = 'GREEN';
-            if (b.defaultCount > 0 || score < 1000) risk = 'RED';
-            else if (score < 1200) risk = 'AMBER';
+            if (b.defaultCount > 0 || b.missedCount > 0) risk = 'RED';
+            else if (b.totalLoans > 5) risk = 'AMBER';
             
-            return { ...b, risk, score };
+            return { ...b, risk };
         });
 
         res.json(formatted);
