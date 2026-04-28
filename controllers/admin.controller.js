@@ -71,11 +71,15 @@ exports.getAllBorrowers = async (req, res) => {
 
         // 3. Map risk level
         const formatted = borrowers.map(b => {
+            const totalLoans = Number(b.totalLoans) || 0;
+            const defaultCount = Number(b.defaultCount) || 0;
+            const missedCount = Number(b.missedCount) || 0;
+
             let risk = 'GREEN';
-            if (b.defaultCount > 0 || b.missedCount > 0) risk = 'RED';
-            else if (b.totalLoans > 5) risk = 'AMBER';
-            
-            return { ...b, risk };
+            if (defaultCount > 0 || missedCount > 0) risk = 'RED';
+            else if (totalLoans > 3) risk = 'AMBER';
+
+            return { ...b, totalLoans, defaultCount, missedCount, risk };
         });
 
         res.json(formatted);
