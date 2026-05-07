@@ -33,6 +33,32 @@ async function syncSchema() {
         }
 
         // Add more schema migrations here in the future...
+        try {
+            await db.execute('ALTER TABLE users ADD COLUMN otp_code VARCHAR(10) NULL AFTER password');
+            console.log('[DB-SYNC] Added "otp_code" column to "users" table.');
+        } catch (error) {
+            if (!(error.code === 'ER_DUP_FIELDNAME' || error.message.includes('Duplicate column'))) {
+                throw error;
+            }
+        }
+
+        try {
+            await db.execute('ALTER TABLE users ADD COLUMN otp_expires_at DATETIME NULL AFTER otp_code');
+            console.log('[DB-SYNC] Added "otp_expires_at" column to "users" table.');
+        } catch (error) {
+            if (!(error.code === 'ER_DUP_FIELDNAME' || error.message.includes('Duplicate column'))) {
+                throw error;
+            }
+        }
+
+        try {
+            await db.execute('ALTER TABLE users ADD COLUMN one_signal_player_id VARCHAR(255) NULL AFTER profile_image_url');
+            console.log('[DB-SYNC] Added "one_signal_player_id" column to "users" table.');
+        } catch (error) {
+            if (!(error.code === 'ER_DUP_FIELDNAME' || error.message.includes('Duplicate column'))) {
+                throw error;
+            }
+        }
 
         console.log('[DB-SYNC] Database schema is up to date.');
     } catch (error) {

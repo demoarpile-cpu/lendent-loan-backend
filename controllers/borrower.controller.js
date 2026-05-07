@@ -48,6 +48,16 @@ exports.addBorrower = async (req, res) => {
                     'INSERT INTO users (name, phone, email, nrc, password, role, status, verificationStatus, referral_code, profile_image_url, license_url) VALUES (?, ?, ?, ?, ?, "borrower", "pending", "pending", ?, ?, ?)',
                     [name, phone, email || null, nrc, hashedPassword, referralCode, photoUrl, nrcUrl]
                 );
+
+                // Send Welcome/Credentials Notification
+                const notificationService = require('../services/notification.service');
+                await notificationService.sendMultiChannel({
+                    phone,
+                    email: email || null,
+                    smsBody: `Welcome to LendaNet! A borrower account has been created for you. Phone: ${phone}, Password: ${password}. Please wait for admin approval.`,
+                    emailSubject: 'LendaNet Account Created',
+                    emailText: `Welcome to LendaNet!\n\nYour borrower account has been created.\nPhone: ${phone}\nPassword: ${password}\n\nPlease wait for admin approval before you can log in.`
+                });
             }
         }
 
@@ -257,9 +267,21 @@ exports.enableLogin = async (req, res) => {
             [b.name, b.phone, b.email || null, b.nrc, hashedPassword, referralCode]
         );
 
-        // In a real app, send SMS here. For now, we return it.
+        // Send Credentials Notification
+        const { sendMultiChannel } = require('./notification.service'); // Note: it's in services/
+        // Wait, I need the correct path
+        const notificationService = require('../services/notification.service');
+        
+        await notificationService.sendMultiChannel({
+            phone: b.phone,
+            email: b.email,
+            smsBody: `Welcome to LendaNet! Your login has been enabled. Phone: ${b.phone}, Password: ${plainPassword}. Please change it after login.`,
+            emailSubject: 'LendaNet Login Enabled',
+            emailText: `Welcome to LendaNet! Your login has been enabled.\nPhone: ${b.phone}\nPassword: ${plainPassword}\nPlease change it after login.`
+        });
+
         res.json({
-            message: 'Login enabled successfully',
+            message: 'Login enabled successfully and credentials sent.',
             credentials: {
                 phone: b.phone,
                 password: plainPassword

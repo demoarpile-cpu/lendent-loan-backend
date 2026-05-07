@@ -1,4 +1,5 @@
 const db = require('../config/db');
+const { sendMultiChannel } = require('../services/notification.service');
 
 exports.getPendingLenders = async (req, res) => {
     try {
@@ -13,6 +14,21 @@ exports.approveLender = async (req, res) => {
     try {
         const { userId } = req.body;
         await db.execute('UPDATE users SET verificationStatus = "verified", status = "active", membership_tier = "free" WHERE id = ?', [userId]);
+
+        const [users] = await db.execute('SELECT phone, email, one_signal_player_id FROM users WHERE id = ?', [userId]);
+        if (users.length > 0) {
+            const target = users[0];
+            await sendMultiChannel({
+                phone: target.phone,
+                email: target.email,
+                oneSignalPlayerId: target.one_signal_player_id,
+                smsBody: 'Your lender account has been approved and is now active.',
+                emailSubject: 'Lender Account Approved',
+                emailText: 'Your lender account has been approved and is now active.',
+                pushTitle: 'Account approved',
+                pushBody: 'Your lender account is now active.'
+            });
+        }
         
         // Add audit log
         await db.execute('INSERT INTO audit_logs (action, user_id, details) VALUES (?, ?, ?)', 
@@ -33,6 +49,21 @@ exports.approveBorrower = async (req, res) => {
         
         // 2. Update user status via NRC
         await db.execute('UPDATE users SET verificationStatus = "verified", status = "active" WHERE nrc = ? AND role = "borrower"', [borrower[0].nrc]);
+
+        const [users] = await db.execute('SELECT phone, email, one_signal_player_id FROM users WHERE nrc = ? AND role = "borrower" LIMIT 1', [borrower[0].nrc]);
+        if (users.length > 0) {
+            const target = users[0];
+            await sendMultiChannel({
+                phone: target.phone,
+                email: target.email,
+                oneSignalPlayerId: target.one_signal_player_id,
+                smsBody: 'Your borrower account has been approved and is now active.',
+                emailSubject: 'Borrower Account Approved',
+                emailText: 'Your borrower account has been approved and is now active.',
+                pushTitle: 'Account approved',
+                pushBody: 'Your borrower account is now active.'
+            });
+        }
         
         // 3. Update borrower profile verification
         await db.execute('UPDATE borrowers SET verificationStatus = "verified" WHERE id = ?', [borrowerId]);

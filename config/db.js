@@ -3,11 +3,11 @@ require('dotenv').config();
 
 // Support both custom DB_* vars and Railway's auto-injected MYSQL* vars
 const dbConfig = {
-    host:     process.env.DB_HOST     || process.env.MYSQLHOST     || 'localhost',
-    port:     process.env.DB_PORT     || process.env.MYSQLPORT     || 3306,
-    user:     process.env.DB_USER     || process.env.MYSQLUSER     || 'root',
-    password: process.env.DB_PASS     || process.env.MYSQLPASSWORD || '',
-    database: process.env.DB_NAME     || process.env.MYSQLDATABASE || 'lendanet_db',
+    host: process.env.DB_HOST || process.env.MYSQLHOST || 'localhost',
+    port: process.env.DB_PORT || process.env.MYSQLPORT || 3306,
+    user: process.env.DB_USER || process.env.MYSQLUSER || 'root',
+    password: process.env.DB_PASS || process.env.MYSQLPASSWORD || '',
+    database: process.env.DB_NAME || process.env.MYSQLDATABASE || 'lendanet_db',
     waitForConnections: true,
     connectionLimit: 10,
     queueLimit: 0,
@@ -23,3 +23,7 @@ console.log(`[DB] Connecting to ${dbConfig.host}:${dbConfig.port} database: ${db
 const pool = mysql.createPool(dbConfig);
 
 module.exports = pool;
+
+
+
+

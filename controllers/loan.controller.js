@@ -1,4 +1,5 @@
 const db = require('../config/db');
+const { sendMultiChannel } = require('../services/notification.service');
 
 // Migration: Create loan_applications table if it doesn't exist
 const initMigration = async () => {
@@ -57,6 +58,28 @@ exports.createLoan = async (req, res) => {
         await db.execute('INSERT INTO audit_logs (action, user_id, entity_type, entity_id, details) VALUES (?, ?, ?, ?, ?)',
             ['CREATE_LOAN', req.user.id, 'loan', loanId, `Loan of K${finalAmount} created for borrower ID: ${finalBorrowerId}`]);
 
+        const [borrowerNotifyRows] = await db.execute(
+            `SELECT u.phone, u.email, u.one_signal_player_id
+             FROM borrowers b
+             JOIN users u ON u.nrc = b.nrc
+             WHERE b.id = ? AND u.role = 'borrower'
+             LIMIT 1`,
+            [finalBorrowerId]
+        );
+        if (borrowerNotifyRows.length > 0) {
+            const target = borrowerNotifyRows[0];
+            await sendMultiChannel({
+                phone: target.phone,
+                email: target.email,
+                oneSignalPlayerId: target.one_signal_player_id,
+                smsBody: `New loan alert: K${finalAmount} has been created. Due date: ${finalDueDate}.`,
+                emailSubject: 'New Loan Alert',
+                emailText: `A new loan of K${finalAmount} has been created for your account. Due date: ${finalDueDate}.`,
+                pushTitle: 'Loan Alert',
+                pushBody: `New loan created: K${finalAmount}.`
+            });
+        }
+
         res.status(201).json({ message: 'Loan created and installments generated', loanId });
     } catch (error) {
         console.error(error);
@@ -94,6 +117,29 @@ exports.addPayment = async (req, res) => {
         // 4. Add Audit Log
         await db.execute('INSERT INTO audit_logs (action, user_id, entity_type, entity_id, details) VALUES (?, ?, ?, ?, ?)', 
             ['ADD_PAYMENT', req.user.id, 'loan', id, `Payment of K${amount} added for loan ID: ${id}`]);
+
+        const [loanRows] = await db.execute(
+            `SELECT u.phone, u.email, u.one_signal_player_id
+             FROM loans l
+             JOIN borrowers b ON l.borrower_id = b.id
+             JOIN users u ON u.nrc = b.nrc AND u.role = 'borrower'
+             WHERE l.id = ?
+             LIMIT 1`,
+            [id]
+        );
+        if (loanRows.length > 0) {
+            const borrowerTarget = loanRows[0];
+            await sendMultiChannel({
+                phone: borrowerTarget.phone,
+                email: borrowerTarget.email,
+                oneSignalPlayerId: borrowerTarget.one_signal_player_id,
+                smsBody: `Repayment received: K${amount} for loan #${id}.`,
+                emailSubject: 'Repayment Received',
+                emailText: `A repayment of K${amount} has been recorded for loan #${id}.`,
+                pushTitle: 'Repayment update',
+                pushBody: `Repayment received for loan #${id}.`
+            });
+        }
 
         res.json({ message: 'Payment added successfully' });
     } catch (error) {
@@ -189,6 +235,29 @@ exports.markDefault = async (req, res) => {
         await db.execute('INSERT INTO audit_logs (action, user_id, entity_type, entity_id, details) VALUES (?, ?, ?, ?, ?)', 
             ['MARK_DEFAULT', req.user.id, 'loan', id, `Loan ID: ${id} marked as default`]);
 
+        const [defaultRows] = await db.execute(
+            `SELECT u.phone, u.email, u.one_signal_player_id
+             FROM loans l
+             JOIN borrowers b ON l.borrower_id = b.id
+             JOIN users u ON u.nrc = b.nrc AND u.role = 'borrower'
+             WHERE l.id = ?
+             LIMIT 1`,
+            [id]
+        );
+        if (defaultRows.length > 0) {
+            const borrowerTarget = defaultRows[0];
+            await sendMultiChannel({
+                phone: borrowerTarget.phone,
+                email: borrowerTarget.email,
+                oneSignalPlayerId: borrowerTarget.one_signal_player_id,
+                smsBody: `Default warning: Loan #${id} is now marked as default. Contact support immediately.`,
+                emailSubject: 'Default Warning',
+                emailText: `Your loan #${id} is marked as default. Please contact support immediately.`,
+                pushTitle: 'Default warning',
+                pushBody: `Loan #${id} is marked as default.`
+            });
+        }
+
         res.json({ message: 'Loan marked as default and added to shared ledger' });
     } catch (error) {
         console.error(error);
@@ -283,6 +352,28 @@ async function autoMarkDefaults(lenderId) {
                 'INSERT INTO audit_logs (action, user_id, entity_type, entity_id, details) VALUES (?, ?, ?, ?, ?)',
                 ['AUTO_DEFAULT', lenderId, 'loan', loan.id, `Loan ID: ${loan.id} auto-marked as default (${loan.missedCount} missed EMIs, threshold: ${threshold})`]
             );
+
+            const [defaultRows] = await db.execute(
+                `SELECT u.phone, u.email, u.one_signal_player_id
+                 FROM borrowers b
+                 JOIN users u ON u.nrc = b.nrc AND u.role = 'borrower'
+                 WHERE b.id = ?
+                 LIMIT 1`,
+                [loan.borrower_id]
+            );
+            if (defaultRows.length > 0) {
+                const borrowerTarget = defaultRows[0];
+                await sendMultiChannel({
+                    phone: borrowerTarget.phone,
+                    email: borrowerTarget.email,
+                    oneSignalPlayerId: borrowerTarget.one_signal_player_id,
+                    smsBody: `Default warning: Loan #${loan.id} crossed missed repayment threshold.`,
+                    emailSubject: 'Auto Default Warning',
+                    emailText: `Loan #${loan.id} crossed repayment threshold and is marked default.`,
+                    pushTitle: 'Default warning',
+                    pushBody: `Loan #${loan.id} crossed repayment threshold.`
+                });
+            }
         }
 
         return eligibleLoans.length;
@@ -456,6 +547,29 @@ exports.updateApplicationStatus = async (req, res) => {
         // 2. Audit log
         await db.execute('INSERT INTO audit_logs (action, user_id, entity_type, entity_id, details) VALUES (?, ?, ?, ?, ?)',
             ['UPDATE_APPLICATION_STATUS', req.user.id, 'loan_application', id, `Status updated to ${status} for application ID: ${id}`]);
+
+        const [notifyRows] = await db.execute(
+            `SELECT u.phone, u.email, u.one_signal_player_id
+             FROM loan_applications a
+             JOIN borrowers b ON a.borrower_id = b.id
+             JOIN users u ON u.nrc = b.nrc AND u.role = 'borrower'
+             WHERE a.id = ?
+             LIMIT 1`,
+            [id]
+        );
+        if (notifyRows.length > 0) {
+            const borrowerTarget = notifyRows[0];
+            await sendMultiChannel({
+                phone: borrowerTarget.phone,
+                email: borrowerTarget.email,
+                oneSignalPlayerId: borrowerTarget.one_signal_player_id,
+                smsBody: `Loan application update: Your request is ${status}.`,
+                emailSubject: 'Loan Application Status',
+                emailText: `Your loan application has been ${status}.`,
+                pushTitle: 'Application update',
+                pushBody: `Your loan application is ${status}.`
+            });
+        }
 
         res.json({ message: `Application ${status} successfully!` });
     } catch (error) {

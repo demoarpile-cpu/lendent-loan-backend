@@ -26,9 +26,14 @@ const allowedOrigins = [
     'http://localhost:5174',
     'https://localhost:5173',
     'https://localhost:5174',
+<<<<<<< HEAD
+    'https://zanezion.kiaansoftware.com',
+    'https://loanmanagements.kiaansoftware.com'
+=======
     'https://loanmanagements.kiaansoftware.com',
     'https://www.lendanet.com',
     'https://lendanet.com'
+>>>>>>> 130fa73f006d2f4729fbc4caa9ddddb5faa69d6e
 ];
 
 app.use(cors({
