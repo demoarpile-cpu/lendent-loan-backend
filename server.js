@@ -24,24 +24,39 @@ const PORT = process.env.PORT || 5000;
 const allowedOrigins = [
     'http://localhost:5173',
     'http://localhost:5174',
-   
+    'https://localhost:5173',
+    'https://localhost:5174',
+    'http://localhost:3000',
+    'http://localhost:3001',
+    'https://zanezion.kiaansoftware.com',
     'https://loanmanagements.kiaansoftware.com',
     'https://www.lendanet.com',
-    'https://lendanet.com'
+    'https://lendanet.com',
+    'https://lendanet.vercel.app',
+    'https://www.lendanet.vercel.app',
 ];
+
+// Add environment-based frontend URLs if specified
+if (process.env.FRONTEND_URL) {
+    allowedOrigins.push(process.env.FRONTEND_URL);
+}
 
 app.use(cors({
     origin: function (origin, callback) {
-        // allow requests with no origin (like mobile apps or curl)
+        // allow requests with no origin (like mobile apps or curl requests)
         if (!origin) return callback(null, true);
 
         if (allowedOrigins.includes(origin)) {
             callback(null, true);
         } else {
+            console.warn('CORS request from unauthorized origin:', origin);
             callback(new Error('CORS not allowed for this origin: ' + origin));
         }
     },
-    credentials: true
+    credentials: true,
+    methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
+    maxAge: 3600
 }));
 
 // Body Parsers
