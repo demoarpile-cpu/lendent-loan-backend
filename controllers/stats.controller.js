@@ -25,8 +25,13 @@ exports.getLenderStats = async (req, res) => {
             LIMIT 5
         `, [lenderId]);
 
+        const totalLoans = Number(counts[0].totalLoans) || 0;
+        const defaultedLoans = Number(counts[0].defaultedLoans) || 0;
+        const safetyScore = totalLoans > 0 ? (((totalLoans - defaultedLoans) / totalLoans) * 100).toFixed(1) : 100;
+
         res.json({
             ...counts[0],
+            safetyScore: parseFloat(safetyScore),
             recentActivity: recent
         });
     } catch (error) {
@@ -36,8 +41,12 @@ exports.getLenderStats = async (req, res) => {
 
 exports.getAdminStats = async (req, res) => {
     try {
-        // Total Capital
-        const [capital] = await db.execute(`SELECT SUM(amount) as totalCapital FROM loans`);
+        // Total Portfolio (Sum of all active, default, and locked loans)
+        const [portfolio] = await db.execute(`
+            SELECT SUM(amount) as totalPortfolio 
+            FROM loans 
+            WHERE status IN ('active', 'default', 'locked')
+        `);
         
         // Lender counts
         const [lenders] = await db.execute(`
@@ -49,6 +58,22 @@ exports.getAdminStats = async (req, res) => {
             WHERE role = 'lender'
         `);
 
+        // Recovery Rate Calculation
+        // Formula: (loans that were PAID out of all loans that were ever defaulted) / total ever-defaulted * 100
+        // We count loans currently 'paid' vs loans currently 'default' to get a live recovery picture.
+        const [loanCounts] = await db.execute(`
+            SELECT
+                SUM(CASE WHEN status = 'paid' THEN 1 ELSE 0 END) as paidLoans,
+                SUM(CASE WHEN status = 'default' THEN 1 ELSE 0 END) as defaultedLoans,
+                COUNT(*) as totalLoans
+            FROM loans
+        `);
+        const paidLoans = Number(loanCounts[0].paidLoans) || 0;
+        const defaultedLoans = Number(loanCounts[0].defaultedLoans) || 0;
+        // Recovery base = loans that were resolved (paid) + loans still in default
+        const recoveryBase = paidLoans + defaultedLoans;
+        const recoveryRate = recoveryBase > 0 ? ((paidLoans / recoveryBase) * 100).toFixed(1) : 0;
+
         // Recent Audit Logs
         const [logs] = await db.execute(`
             SELECT a.*, u.name as performedBy 
@@ -59,14 +84,18 @@ exports.getAdminStats = async (req, res) => {
         `);
 
         res.json({
-            totalCapital: capital[0].totalCapital || 0,
+            totalPortfolio: portfolio[0].totalPortfolio || 0,
             ...lenders[0],
+            recoveryRate: parseFloat(recoveryRate),
+            paidLoans,
+            defaultedLoans,
             recentLogs: logs
         });
     } catch (error) {
         res.status(500).json({ message: error.message });
     }
 };
+
 exports.getBorrowerStats = async (req, res) => {
     try {
         const borrowerId = req.user.id;
