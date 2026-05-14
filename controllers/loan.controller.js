@@ -193,13 +193,18 @@ exports.reversePayment = async (req, res) => {
         );
         console.log(`[REVERSE] Updated ${insResult.affectedRows} installment record to pending`);
 
-        // 3. Set loan status back to active (if it was paid or default)
-        const [loanResult] = await db.execute('UPDATE loans SET status = "active" WHERE id = ?', [id]);
-        console.log(`[REVERSE] Reverted loan status to active (ID: ${id})`);
+        // 3. Set loan status back to active ONLY if it was "paid". 
+        // If it's "default", it should STAY "default".
+        const [currentLoan] = await db.execute('SELECT status FROM loans WHERE id = ?', [id]);
+        if (currentLoan.length > 0 && currentLoan[0].status === 'paid') {
+            await db.execute('UPDATE loans SET status = "active" WHERE id = ?', [id]);
+            console.log(`[REVERSE] Reverted loan status from paid to active (ID: ${id})`);
+        }
 
-        // 4. Remove from default ledger (in case it was there)
-        await db.execute('DELETE FROM default_ledger WHERE loan_id = ?', [id]);
-        console.log(`[REVERSE] Removed loan from default ledger (if applicable)`);
+        // 4. Remove from default ledger (ONLY if the loan is no longer default - 
+        // though typically clearing default should be a separate manual action or handled when fully paid).
+        // For now, we follow client request: Reverting a payment should NOT remove default status.
+        // So we remove the automatic deletion.
 
         // 5. Add Audit Log
         await db.execute('INSERT INTO audit_logs (action, user_id, entity_type, entity_id, details) VALUES (?, ?, ?, ?, ?)', 

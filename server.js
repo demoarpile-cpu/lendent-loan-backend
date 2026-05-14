@@ -24,8 +24,8 @@ const PORT = process.env.PORT || 5000;
 const allowedOrigins = [
     'http://localhost:5173',
     'http://localhost:5174',
-    'https://localhost:5173',
-    'https://localhost:5174',
+    'http://localhost:5175',
+    'http://localhost:5176',
     'http://localhost:3000',
     'http://localhost:3001',
     'https://zanezion.kiaansoftware.com',
@@ -38,7 +38,13 @@ const allowedOrigins = [
 
 // Add environment-based frontend URLs if specified
 if (process.env.FRONTEND_URL) {
-    allowedOrigins.push(process.env.FRONTEND_URL);
+    let frontendUrl = process.env.FRONTEND_URL;
+    if (!frontendUrl.startsWith('http')) {
+        allowedOrigins.push(`http://${frontendUrl}`);
+        allowedOrigins.push(`https://${frontendUrl}`);
+    } else {
+        allowedOrigins.push(frontendUrl);
+    }
 }
 
 app.use(cors({
@@ -50,7 +56,9 @@ app.use(cors({
             callback(null, true);
         } else {
             console.warn('CORS request from unauthorized origin:', origin);
-            callback(new Error('CORS not allowed for this origin: ' + origin));
+            // Instead of returning an error (which causes a 500 status), 
+            // return false to signify the origin is not allowed.
+            callback(null, false);
         }
     },
     credentials: true,
@@ -96,13 +104,28 @@ app.use('/api/contact', contactRoutes);
 
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
+// 404 Handler
+app.use((req, res) => {
+    console.warn(`[404] Route not found: ${req.method} ${req.url}`);
+    res.status(404).json({ message: `Route ${req.url} not found` });
+});
+
 // Error Handler
 app.use((err, req, res, next) => {
-    console.error('SERVER ERROR:', err);
+    console.error('SERVER ERROR:', err.stack);
     if (err.code === 'LIMIT_UNEXPECTED_FILE') {
         return res.status(400).json({ message: 'Unexpected field in form data', field: err.field });
     }
     res.status(500).json({ message: err.message || 'Internal Server Error' });
+});
+
+// Global Exception Handlers
+process.on('unhandledRejection', (reason, promise) => {
+    console.error('Unhandled Rejection at:', promise, 'reason:', reason);
+});
+
+process.on('uncaughtException', (err) => {
+    console.error('Uncaught Exception:', err);
 });
 
 app.listen(PORT, async () => {

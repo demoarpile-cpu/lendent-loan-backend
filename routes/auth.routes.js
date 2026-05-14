@@ -22,6 +22,8 @@ router.post('/login', authController.login);
 router.get('/me', protect, authController.getMe);
 router.post('/verify-otp', authController.verifyOtp);
 router.post('/push-player-id', protect, authController.savePushPlayerId);
+router.post('/forgot-password', authController.forgotPassword);
+router.post('/reset-password', authController.resetPassword);
 router.put('/update-profile', protect, upload.any(), authController.updateProfile);
 
 module.exports = router;

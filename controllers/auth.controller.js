@@ -152,13 +152,34 @@ exports.register = async (req, res) => {
             welcomeMessage += ` Your temporary password is: ${password}. Please change it after login.`;
         }
 
-        await sendMultiChannel({
+        console.log(`[Auth] Attempting to send OTP to Phone: ${phone}, Email: ${email || 'None'}`);
+        const notificationResult = await sendMultiChannel({
             phone,
             email: email || null,
             smsBody: welcomeMessage,
             emailSubject: 'LendaNet OTP Verification',
             emailText: welcomeMessage
         });
+        console.log('[Auth] OTP Notification Dispatch Result:', notificationResult);
+
+        // Notify Admin of new registration
+        try {
+            const [admins] = await db.execute('SELECT phone, email, one_signal_player_id FROM users WHERE role = "admin" AND status = "active"');
+            for (const admin of admins) {
+                await sendMultiChannel({
+                    phone: admin.phone,
+                    email: admin.email,
+                    oneSignalPlayerId: admin.one_signal_player_id,
+                    smsBody: `LendaNet Alert: New ${role} (${name}) has registered and is pending approval.`,
+                    emailSubject: 'New User Registration Pending Approval',
+                    emailText: `A new ${role} named ${name} (${phone}) has registered on the platform and requires your approval.`,
+                    pushTitle: 'New Registration',
+                    pushBody: `New ${role} (${name}) requires approval.`
+                });
+            }
+        } catch (adminNotifError) {
+            console.error('[Auth] Failed to notify admin of new registration:', adminNotifError);
+        }
 
         res.status(201).json({
             message: 'Registration successful. Please verify OTP.',
@@ -510,5 +531,105 @@ exports.verifyOtp = async (req, res) => {
     } catch (error) {
         console.error('Verify OTP Error:', error);
         return res.status(500).json({ success: false, message: 'Server error verifying OTP' });
+    }
+};
+
+// Forgot Password - Send OTP
+exports.forgotPassword = async (req, res) => {
+    try {
+        const { identifier } = req.body;
+        if (!identifier) {
+            return res.status(400).json({ message: 'Email or phone number is required' });
+        }
+
+        const [users] = await db.execute(
+            'SELECT id, email, phone FROM users WHERE email = ? OR phone = ?',
+            [identifier, identifier]
+        );
+
+        if (users.length === 0) {
+            // To prevent user enumeration, we still return success but don't say user not found
+            return res.json({ message: 'If an account exists, an OTP has been sent' });
+        }
+
+        const user = users[0];
+        const otpCode = String(crypto.randomInt(100000, 1000000));
+        const otpExpiresAt = new Date(Date.now() + 15 * 60 * 1000); // 15 mins
+
+        await db.execute(
+            'UPDATE users SET otp_code = ?, otp_expires_at = ? WHERE id = ?',
+            [otpCode, otpExpiresAt, user.id]
+        );
+
+        const message = `Your LendaNet password reset OTP is ${otpCode}. It expires in 15 minutes.`;
+        
+        console.log('-----------------------------------------');
+        console.log('PASSWORD RESET OTP:', otpCode);
+        console.log('FOR USER ID:', user.id);
+        console.log('-----------------------------------------');
+
+        await sendMultiChannel({
+            phone: user.phone,
+            email: user.email,
+            smsBody: message,
+            emailSubject: 'LendaNet Password Reset',
+            emailText: message
+        });
+
+        res.json({ message: 'Password reset OTP sent', userId: user.id });
+    } catch (error) {
+        console.error('Forgot Password Error:', error);
+        res.status(500).json({ message: 'Server error during password reset' });
+    }
+};
+
+// Reset Password with OTP
+exports.resetPassword = async (req, res) => {
+    try {
+        const { userId, otp, newPassword } = req.body;
+
+        if (!userId || !otp || !newPassword) {
+            return res.status(400).json({ message: 'UserId, OTP and New Password are required' });
+        }
+
+        const [users] = await db.execute(
+            'SELECT id, otp_code, otp_expires_at FROM users WHERE id = ?',
+            [userId]
+        );
+
+        if (users.length === 0) {
+            return res.status(404).json({ message: 'User not found' });
+        }
+
+        const user = users[0];
+        if (!user.otp_code || !user.otp_expires_at) {
+            return res.status(400).json({ message: 'OTP not requested or expired' });
+        }
+
+        if (String(user.otp_code) !== String(otp)) {
+            return res.status(400).json({ message: 'Invalid OTP' });
+        }
+
+        if (new Date(user.otp_expires_at).getTime() < Date.now()) {
+            return res.status(400).json({ message: 'OTP expired' });
+        }
+
+        // Validate new password strength
+        const pwErrors = validatePassword(newPassword);
+        if (pwErrors.length > 0) {
+            return res.status(400).json({ message: 'Password must contain: ' + pwErrors.join(', ') });
+        }
+
+        const hashedPassword = await bcrypt.hash(newPassword, 10);
+
+        await db.execute(
+            'UPDATE users SET password = ?, otp_code = NULL, otp_expires_at = NULL WHERE id = ?',
+            [hashedPassword, userId]
+        );
+
+        res.json({ success: true, message: 'Password reset successfully. You can now login.' });
+    } catch (error) {
+        console.error('Reset Password Error:', error);
+        res.status(500).json({ message: 'Server error resetting password' });
     }
 };

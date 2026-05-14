@@ -1,4 +1,5 @@
 const db = require('../config/db');
+const { sendMultiChannel } = require('../services/notification.service');
 
 // Request Membership Upgrade
 exports.requestUpgrade = async (req, res) => {
@@ -38,6 +39,28 @@ exports.requestUpgrade = async (req, res) => {
         // Add Audit Log
         await db.execute('INSERT INTO audit_logs (action, user_id, details) VALUES (?, ?, ?)', 
             ['UPGRADE_REQUEST', userId, `Requested upgrade to: ${selected_plan}`]);
+
+        // Notify Admin
+        try {
+            const [userRow] = await db.execute('SELECT name, phone FROM users WHERE id = ?', [userId]);
+            const userName = userRow.length > 0 ? userRow[0].name : `User ID ${userId}`;
+            const [admins] = await db.execute('SELECT phone, email, one_signal_player_id FROM users WHERE role = "admin" AND status = "active"');
+            
+            for (const admin of admins) {
+                await sendMultiChannel({
+                    phone: admin.phone,
+                    email: admin.email,
+                    oneSignalPlayerId: admin.one_signal_player_id,
+                    smsBody: `LendaNet Alert: ${userName} has requested a membership upgrade to ${selected_plan}.`,
+                    emailSubject: 'New Membership Upgrade Request',
+                    emailText: `${userName} has requested to upgrade their membership to the ${selected_plan} plan. Please review in the admin panel.`,
+                    pushTitle: 'Upgrade Request',
+                    pushBody: `${userName} requested ${selected_plan} upgrade.`
+                });
+            }
+        } catch (adminNotifError) {
+            console.error('[Membership] Failed to notify admin of upgrade request:', adminNotifError);
+        }
 
         res.status(201).json({ message: 'Upgrade request sent to admin for approval' });
     } catch (error) {

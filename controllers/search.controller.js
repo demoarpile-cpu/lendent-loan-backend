@@ -106,9 +106,16 @@ exports.searchBorrower = async (req, res) => {
                 [borrower.id]
             );
 
-            response.risk_status = (stats[0].defaultCount > 0 || lateRows[0].lateCount > 0) ? 'RED' : (stats[0].activeLoans > 0 ? 'AMBER' : 'GREEN');
+            // Check Central Default Ledger (Shared Risk)
+            const [centralDefaults] = await db.execute(
+                'SELECT COUNT(*) as count FROM default_ledger WHERE nrc = ?',
+                [borrower.nrc]
+            );
+            const totalDefaultRecords = (stats[0].defaultCount || 0) + (centralDefaults[0].count || 0);
+
+            response.risk_status = (totalDefaultRecords > 0 || lateRows[0].lateCount > 0) ? 'RED' : (stats[0].activeLoans > 0 ? 'AMBER' : 'GREEN');
             response.activeLoans = stats[0].activeLoans;
-            response.total_defaults = stats[0].defaultCount;
+            response.total_defaults = totalDefaultRecords;
             response.lateCount = lateRows[0].lateCount;
             response.loanTypes = {
                 collateral: stats[0].collateralCount,

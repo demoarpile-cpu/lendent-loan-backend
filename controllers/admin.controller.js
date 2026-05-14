@@ -95,6 +95,7 @@ exports.getAllBorrowers = async (req, res) => {
             (SELECT GROUP_CONCAT(lb.lender_id SEPARATOR ',') FROM lender_borrowers lb WHERE lb.borrower_id = b.id) as lenderIds,
             (SELECT COUNT(*) FROM loans WHERE borrower_id = b.id) as totalLoans,
             (SELECT COUNT(*) FROM loans WHERE borrower_id = b.id AND status = 'default') as defaultCount,
+            (SELECT COUNT(*) FROM default_ledger WHERE nrc = b.nrc) as centralDefaults,
             (SELECT COUNT(*) FROM loan_installments li JOIN loans l ON li.loan_id = l.id WHERE l.borrower_id = b.id AND li.status = 'pending' AND li.due_date < CURRENT_DATE) as missedCount
             FROM borrowers b
             LEFT JOIN users u ON b.nrc = u.nrc AND u.role = 'borrower'
@@ -104,13 +105,14 @@ exports.getAllBorrowers = async (req, res) => {
         const formatted = borrowers.map(b => {
             const totalLoans = Number(b.totalLoans) || 0;
             const defaultCount = Number(b.defaultCount) || 0;
+            const centralDefaults = Number(b.centralDefaults) || 0;
             const missedCount = Number(b.missedCount) || 0;
 
             let risk = 'GREEN';
-            if (defaultCount > 0 || missedCount > 0) risk = 'RED';
+            if (defaultCount > 0 || centralDefaults > 0 || missedCount > 0) risk = 'RED';
             else if (totalLoans > 3) risk = 'AMBER';
 
-            return { ...b, totalLoans, defaultCount, missedCount, risk };
+            return { ...b, totalLoans, defaultCount: defaultCount + centralDefaults, missedCount, risk };
         });
 
         res.json(formatted);

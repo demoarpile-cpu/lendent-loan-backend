@@ -128,6 +128,7 @@ exports.getLenderBorrowers = async (req, res) => {
             `SELECT b.*,
              (SELECT COUNT(*) FROM loans WHERE borrower_id = b.id) as totalLoans,
              (SELECT COUNT(*) FROM loans WHERE borrower_id = b.id AND status = 'default') as totalDefaults,
+             (SELECT COUNT(*) FROM default_ledger WHERE nrc = b.nrc) as centralDefaults,
              (SELECT COUNT(*) FROM loan_installments li JOIN loans l ON li.loan_id = l.id WHERE l.borrower_id = b.id AND li.status = 'pending' AND li.due_date < CURRENT_DATE) as missedCount
              FROM borrowers b 
              JOIN lender_borrowers lb ON b.id = lb.borrower_id 
@@ -143,7 +144,7 @@ exports.getLenderBorrowers = async (req, res) => {
         const formatted = borrowers.map(b => {
              // Map Risk Level
              let risk = 'GREEN';
-             if (b.totalDefaults > 0 || b.missedCount > 0) risk = 'RED';
+             if (b.totalDefaults > 0 || b.centralDefaults > 0 || b.missedCount > 0) risk = 'RED';
              else if (b.totalLoans > 5) risk = 'AMBER';
              
              const result = { ...b, risk };
@@ -206,7 +207,11 @@ exports.getRiskSummary = async (req, res) => {
         const missedCount = missed[0].missedCount;
 
         let riskLevel = 'GREEN';
-        if (stats[0].defaultCount > 0 || missedCount > 0) riskLevel = 'RED';
+        // Check central defaults by NRC
+        const [central] = await db.execute('SELECT COUNT(*) as count FROM default_ledger WHERE nrc = ?', [borrower[0].nrc]);
+        const totalDefaults = (stats[0].defaultCount || 0) + (central[0].count || 0);
+
+        if (totalDefaults > 0 || missedCount > 0) riskLevel = 'RED';
         else if (stats[0].totalLoans > 5) riskLevel = 'AMBER';
 
         const response = {
