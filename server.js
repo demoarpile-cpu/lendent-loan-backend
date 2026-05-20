@@ -19,7 +19,7 @@ if (!fs.existsSync(uploadDir)) {
 }
 
 const app = express();
-const PORT = process.env.PORT || 5000;
+const PORT = process.env.PORT || 5001;
 
 const allowedOrigins = [
     'http://localhost:5173',
@@ -145,3 +145,5 @@ app.listen(PORT, async () => {
         await db.query("INSERT IGNORE INTO system_settings (setting_key, setting_value) VALUES ('collateral_upload_enabled', 'true')");
     } catch (e) { console.log('Settings seed skipped:', e.message); }
 });
+// Nodemon trigger
+

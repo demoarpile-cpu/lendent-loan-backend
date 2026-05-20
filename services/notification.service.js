@@ -18,33 +18,47 @@ async function sendMultiChannel({
         push: null
     };
 
+    console.log(`[NotificationService] Dispatching multi-channel notification...`);
+    console.log(`- SMS Target: ${phone ? phone : 'None'}`);
+    console.log(`- Email Target: ${email ? email : 'None'}`);
+    console.log(`- Push Target Player ID: ${oneSignalPlayerId ? oneSignalPlayerId : 'None'}`);
+
     const results = await Promise.allSettled([
-        phone && smsBody ? twilioService.sendSms({ to: phone, body: smsBody }) : Promise.resolve(null),
-        // OneSignal can handle both Push and Email if configured
-        (oneSignalPlayerId || email) ? oneSignalService.sendPush({
-            playerIds: oneSignalPlayerId ? [oneSignalPlayerId] : [],
-            email: email || null,
-            headings: pushTitle || emailSubject || 'LendaNet',
-            contents: pushBody || emailText || smsBody
-        }) : Promise.resolve(null),
-        // Keep Twilio Email as a secondary option or for direct transactional emails
-        email && emailSubject && !oneSignalPlayerId ? twilioService.sendEmail({
-            to: email,
-            subject: emailSubject,
-            html: emailHtml,
-            text: emailText
-        }) : Promise.resolve(null)
+        // 1. Deliver SMS via Twilio
+        phone && smsBody 
+            ? twilioService.sendSms({ to: phone, body: smsBody }) 
+            : Promise.resolve(null),
+        
+        // 2. Deliver Push Notification via OneSignal
+        oneSignalPlayerId && (pushBody || smsBody)
+            ? oneSignalService.sendPush({
+                playerIds: [oneSignalPlayerId],
+                headings: pushTitle || 'LendaNet',
+                contents: pushBody || smsBody
+            }) 
+            : Promise.resolve(null),
+        
+        // 3. Deliver Transactional Email
+        email && emailSubject && (emailHtml || emailText)
+            ? twilioService.sendEmail({
+                to: email,
+                subject: emailSubject,
+                html: emailHtml,
+                text: emailText || emailHtml.replace(/<[^>]*>/g, '')
+            }) 
+            : Promise.resolve(null)
     ]);
 
     result.sms = results[0].status === 'fulfilled' ? results[0].value : { ok: false, reason: results[0].reason };
     result.push = results[1].status === 'fulfilled' ? results[1].value : { ok: false, reason: results[1].reason };
     result.email = results[2].status === 'fulfilled' ? results[2].value : { ok: false, reason: results[2].reason };
 
-    console.log('[NotificationService] Dispatch Results:', {
+    console.log('[NotificationService] Final Dispatch Results:', {
         sms: result.sms,
-        push_and_email: result.push,
-        direct_email: result.email
+        push: result.push,
+        email: result.email
     });
+    
     return result;
 }
 
