@@ -43,6 +43,45 @@ if (smtpHost && smtpUser && smtpPass) {
     }
 }
 
+function formatPhoneNumber(phone) {
+    if (!phone) return '';
+    let cleaned = phone.replace(/\s+/g, '').replace(/[-()]/g, ''); // Remove spaces, dashes, brackets
+
+    // If it already starts with '+', it is already international
+    if (cleaned.startsWith('+')) {
+        return cleaned;
+    }
+
+    // Default country code from env or default to Zambia (+260)
+    const defaultCode = (process.env.DEFAULT_COUNTRY_CODE || '+260').trim();
+
+    // Zambian format handler (+260)
+    if (defaultCode === '+260') {
+        // If it starts with local leading '0', replace it with '+260' (e.g. 0977123456 -> +260977123456)
+        if (cleaned.startsWith('0')) {
+            return '+260' + cleaned.substring(1);
+        }
+        // If it starts with '260' without '+', just prepend '+' (e.g. 260977123456 -> +260977123456)
+        if (cleaned.startsWith('260')) {
+            return '+' + cleaned;
+        }
+    }
+
+    // Indian format handler (+91)
+    if (defaultCode === '+91') {
+        if (cleaned.startsWith('0')) {
+            return '+91' + cleaned.substring(1);
+        }
+        if (cleaned.startsWith('91') && cleaned.length > 10) {
+            return '+' + cleaned;
+        }
+    }
+
+    // Generic fallback
+    const prefix = defaultCode.startsWith('+') ? defaultCode : `+${defaultCode}`;
+    return prefix + (cleaned.startsWith('0') ? cleaned.substring(1) : cleaned);
+}
+
 function isConfigured() {
     return Boolean(client) || mockNotifications;
 }
@@ -86,19 +125,21 @@ function printMockEmail(to, subject, text, html) {
 async function sendSms({ to, body }) {
     if (!to || !body) return { ok: false, reason: 'Missing phone/body' };
 
+    const formattedTo = formatPhoneNumber(to);
+
     // Support local mock mode
     if (mockNotifications || !client) {
-        printMockSms(to, body);
+        printMockSms(formattedTo, body);
         return { ok: true, mock: true, sid: 'mock_sid_' + Math.random().toString(36).substr(2, 9) };
     }
 
-    const payload = { to, body };
+    const payload = { to: formattedTo, body };
     if (smsAlphaSender) payload.from = smsAlphaSender;
     else if (smsFrom) payload.from = smsFrom;
     else return { ok: false, reason: 'Missing TWILIO_SMS_FROM or TWILIO_SMS_ALPHA_SENDER' };
 
     try {
-        console.log(`[Twilio] Sending SMS to ${to}...`);
+        console.log(`[Twilio] Sending SMS to ${formattedTo}...`);
         const result = await client.messages.create(payload);
         console.log(`[Twilio] SMS sent successfully. SID: ${result.sid}`);
         return { ok: true, sid: result.sid };
@@ -107,7 +148,7 @@ async function sendSms({ to, body }) {
         
         // Graceful fallback to mock so the application flow does not break in local testing
         console.log('ℹ️ [Twilio Fallback] Falling back to Console Log representation...');
-        printMockSms(to, body);
+        printMockSms(formattedTo, body);
         return { ok: true, fallback: true, reason: error.message };
     }
 }
