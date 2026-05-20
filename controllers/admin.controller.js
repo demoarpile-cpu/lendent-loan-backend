@@ -29,9 +29,9 @@ exports.approveLender = async (req, res) => {
                 pushBody: 'Your lender account is now active.'
             });
         }
-        
+
         // Add audit log
-        await db.execute('INSERT INTO audit_logs (action, user_id, details) VALUES (?, ?, ?)', 
+        await db.execute('INSERT INTO audit_logs (action, user_id, details) VALUES (?, ?, ?)',
             ['APPROVE_LENDER', req.user.id, `Approved lender ID: ${userId}`]);
 
         res.json({ message: 'Lender approved successfully' });
@@ -46,7 +46,7 @@ exports.approveBorrower = async (req, res) => {
         // 1. Get borrower info to find NRC
         const [borrower] = await db.execute('SELECT nrc FROM borrowers WHERE id = ?', [borrowerId]);
         if (borrower.length === 0) return res.status(404).json({ message: 'Borrower not found' });
-        
+
         // 2. Update user status via NRC
         await db.execute('UPDATE users SET verificationStatus = "verified", status = "active" WHERE nrc = ? AND role = "borrower"', [borrower[0].nrc]);
 
@@ -64,12 +64,12 @@ exports.approveBorrower = async (req, res) => {
                 pushBody: 'Your borrower account is now active.'
             });
         }
-        
+
         // 3. Update borrower profile verification
         await db.execute('UPDATE borrowers SET verificationStatus = "verified" WHERE id = ?', [borrowerId]);
-        
+
         // Add audit log
-        await db.execute('INSERT INTO audit_logs (action, user_id, details) VALUES (?, ?, ?)', 
+        await db.execute('INSERT INTO audit_logs (action, user_id, details) VALUES (?, ?, ?)',
             ['APPROVE_BORROWER', req.user.id, `Approved borrower ID: ${borrowerId}`]);
 
         res.json({ message: 'Borrower approved successfully' });
@@ -235,7 +235,7 @@ exports.updateMembershipPlan = async (req, res) => {
     try {
         const { id } = req.params;
         const { price, duration_days } = req.body;
-        await db.execute('UPDATE membership_plans SET price = ?, duration_days = ? WHERE id = ?', 
+        await db.execute('UPDATE membership_plans SET price = ?, duration_days = ? WHERE id = ?',
             [price, duration_days, id]);
         res.json({ message: 'Membership plan updated successfully' });
     } catch (error) {
@@ -260,8 +260,8 @@ exports.updateSetting = async (req, res) => {
     try {
         const { key, value } = req.body;
         await db.execute('UPDATE system_settings SET setting_value = ? WHERE setting_key = ?', [value, key]);
-        
-        await db.execute('INSERT INTO audit_logs (action, user_id, details) VALUES (?, ?, ?)', 
+
+        await db.execute('INSERT INTO audit_logs (action, user_id, details) VALUES (?, ?, ?)',
             ['UPDATE_SETTING', req.user.id, `Updated setting ${key} to: ${value}`]);
 
         res.json({ message: 'Setting updated successfully' });
@@ -275,8 +275,8 @@ exports.updateMembership = async (req, res) => {
     try {
         const { userId, tier } = req.body;
         await db.execute('UPDATE users SET membership_tier = ? WHERE id = ?', [tier, userId]);
-        
-        await db.execute('INSERT INTO audit_logs (action, user_id, details) VALUES (?, ?, ?)', 
+
+        await db.execute('INSERT INTO audit_logs (action, user_id, details) VALUES (?, ?, ?)',
             ['UPDATE_MEMBERSHIP', req.user.id, `Updated user ${userId} to tier: ${tier}`]);
 
         res.json({ message: 'Membership tier updated successfully' });
@@ -289,10 +289,10 @@ exports.updateMembership = async (req, res) => {
 exports.updateLenderStatus = async (req, res) => {
     try {
         const { userId, status, verificationStatus } = req.body;
-        await db.execute('UPDATE users SET status = ?, verificationStatus = ? WHERE id = ?', 
+        await db.execute('UPDATE users SET status = ?, verificationStatus = ? WHERE id = ?',
             [status, verificationStatus, userId]);
-        
-        await db.execute('INSERT INTO audit_logs (action, user_id, details) VALUES (?, ?, ?)', 
+
+        await db.execute('INSERT INTO audit_logs (action, user_id, details) VALUES (?, ?, ?)',
             ['UPDATE_LENDER_STATUS', req.user.id, `Updated lender ${userId} to ${status}/${verificationStatus}`]);
 
         res.json({ message: 'Lender status updated successfully' });
@@ -393,7 +393,7 @@ exports.createLoan = async (req, res) => {
         const finalInterestRate = interestRate || 0;
         const finalInstallmentsCount = installmentsCount || 3;
         const finalIssueDate = issueDate || new Date().toISOString().split('T')[0];
-        
+
         // Calculate due date if not provided (default to months count)
         let finalDueDate = dueDate;
         if (!finalDueDate) {
@@ -438,7 +438,7 @@ exports.getLenderDetails = async (req, res) => {
     try {
         const { id } = req.params;
         const [lenders] = await db.execute('SELECT id, lender_id, name, phone, email, nrc, company_registration_number, business_name, lender_type, plan_type, license_url, nrc_url, role, status, verificationStatus, membership_tier, created_at FROM users WHERE id = ? AND role = "lender"', [id]);
-        
+
         if (lenders.length === 0) {
             return res.status(404).json({ message: 'Lender not found' });
         }
