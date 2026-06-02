@@ -34,7 +34,7 @@ if (smtpHost && smtpUser && smtpPass) {
             secure: Number(smtpPort) === 465,
             auth: {
                 user: smtpUser,
-                password: smtpPass
+                pass: smtpPass
             }
         });
         console.log('✅ [Email] Nodemailer SMTP Transporter configured.');

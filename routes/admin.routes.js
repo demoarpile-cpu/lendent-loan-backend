@@ -25,4 +25,10 @@ router.get('/lenders/:id/loans', protect, admin, adminController.getLenderLoans)
 router.delete('/lenders/:id', protect, admin, adminController.deleteLender);
 router.delete('/borrowers/:id', protect, admin, adminController.deleteBorrower);
 
+// Admin Management Routes
+router.get('/admins', protect, admin, adminController.getAllAdmins);
+router.post('/admins', protect, admin, adminController.addAdmin);
+router.delete('/admins/:id', protect, admin, adminController.deleteAdmin);
+router.post('/admins/:id/email', protect, admin, adminController.updateAdminEmail);
+
 module.exports = router;

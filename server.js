@@ -28,12 +28,11 @@ const allowedOrigins = [
     'http://localhost:5176',
     'http://localhost:3000',
     'http://localhost:3001',
-    'https://zanezion.kiaansoftware.com',
-    'https://loanmanagements.kiaansoftware.com',
+
+ 
     'https://www.lendanet.com',
     'https://lendanet.com',
-    'https://lendanet.vercel.app',
-    'https://www.lendanet.vercel.app',
+  
 ];
 
 // Add environment-based frontend URLs if specified
@@ -70,6 +69,9 @@ app.use(cors({
 // Body Parsers
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
+
+// Serve Static Files
+app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
 // Debug Logging
 app.use((req, res, next) => {

@@ -45,7 +45,7 @@ exports.addBorrower = async (req, res) => {
 
             if (existingU.length === 0) {
                 await db.execute(
-                    'INSERT INTO users (name, phone, email, nrc, password, role, status, verificationStatus, referral_code, profile_image_url, license_url) VALUES (?, ?, ?, ?, ?, "borrower", "pending", "pending", ?, ?, ?)',
+                    'INSERT INTO users (name, phone, email, nrc, password, role, status, verificationStatus, referral_code, profile_image_url, license_url) VALUES (?, ?, ?, ?, ?, "borrower", "active", "verified", ?, ?, ?)',
                     [name, phone, email || null, nrc, hashedPassword, referralCode, photoUrl, nrcUrl]
                 );
 
@@ -54,9 +54,9 @@ exports.addBorrower = async (req, res) => {
                 await notificationService.sendMultiChannel({
                     phone,
                     email: email || null,
-                    smsBody: `Welcome to LendaNet! A borrower account has been created for you. Phone: ${phone}, Password: ${password}. Please wait for admin approval.`,
+                    smsBody: `Welcome to LendaNet! A borrower account has been created for you. Phone: ${phone}, Password: ${password}. You can now log in.`,
                     emailSubject: 'LendaNet Account Created',
-                    emailText: `Welcome to LendaNet!\n\nYour borrower account has been created.\nPhone: ${phone}\nPassword: ${password}\n\nPlease wait for admin approval before you can log in.`
+                    emailText: `Welcome to LendaNet!\n\nYour borrower account has been created.\nPhone: ${phone}\nPassword: ${password}\n\nYou can now log in to your account.`
                 });
             }
         }

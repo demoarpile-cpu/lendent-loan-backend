@@ -201,6 +201,17 @@ INSERT IGNORE INTO system_settings (setting_key, setting_value) VALUES ('free_tr
 INSERT IGNORE INTO system_settings (setting_key, setting_value) VALUES ('free_trial_days', '365');
 INSERT IGNORE INTO system_settings (setting_key, setting_value) VALUES ('free_access_enabled', 'true');
 
+-- CMS Content Defaults
+INSERT IGNORE INTO system_settings (setting_key, setting_value) VALUES ('brand_name', 'LENDANET');
+INSERT IGNORE INTO system_settings (setting_key, setting_value) VALUES ('tagline', 'Zambia''s Credit Network');
+INSERT IGNORE INTO system_settings (setting_key, setting_value) VALUES ('contact_email', 'support@lendanet.com');
+INSERT IGNORE INTO system_settings (setting_key, setting_value) VALUES ('contact_phone', '+260 970 000 000');
+INSERT IGNORE INTO system_settings (setting_key, setting_value) VALUES ('hero_title', 'Lend Safer. Risk Less.');
+INSERT IGNORE INTO system_settings (setting_key, setting_value) VALUES ('hero_subtitle', 'Access the shared intelligence of hundreds of lenders. Detect risky borrowers in seconds and protect your capital.');
+INSERT IGNORE INTO system_settings (setting_key, setting_value) VALUES ('about_us_text', 'LendaNet was founded with a single mission: to empower the independent lending community in Zambia. In an informal market, trust is everything. Our platform provides the digital infrastructure needed to share critical risk data securely and ethically, helping lenders protect their hard-earned capital from repeat defaulters.');
+INSERT IGNORE INTO system_settings (setting_key, setting_value) VALUES ('terms_text', 'By accessing or using the LendaNet platform ("the Platform"), you agree to be bound by these Terms and Conditions. LendaNet is a credit intelligence network designed for verified lenders in Zambia. If you do not agree to these terms, you must not use our services.');
+INSERT IGNORE INTO system_settings (setting_key, setting_value) VALUES ('privacy_text', 'We take data privacy seriously. All borrower NRC and payment records are encrypted. We do not sell data to third parties. Access to default records is restricted only to verified, paid lenders.');
+
 -- 16. Seed Membership Plans
 INSERT IGNORE INTO membership_plans (id, name, price, duration_days, features_json, status) VALUES
 (1, 'Free', 0.00, 0, '{"search": false, "risk": false, "history": false}', 'active'),

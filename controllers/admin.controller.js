@@ -301,7 +301,7 @@ exports.updateLenderStatus = async (req, res) => {
     }
 };
 
-// Admin - Delete Lender (ON DELETE CASCADE handles all related data automatically)
+// Admin - Delete Lender (Manually delete all related data to avoid FK issues on any DB)
 exports.deleteLender = async (req, res) => {
     try {
         const { id } = req.params;
@@ -309,26 +309,54 @@ exports.deleteLender = async (req, res) => {
         const [lender] = await db.execute('SELECT * FROM users WHERE id = ? AND role = "lender"', [id]);
         if (lender.length === 0) return res.status(404).json({ message: 'Lender not found' });
 
-        // Audit log before delete (since user_id will be SET NULL after cascade)
+        // Audit log before delete
         await db.execute('INSERT INTO audit_logs (action, user_id, details) VALUES (?, ?, ?)',
             ['DELETE_LENDER', req.user.id, `Deleted lender: ${lender[0].name} (ID: ${id})`]);
 
-        // Just delete user - CASCADE will auto-remove all related data
+        // 1. Get all loan IDs for this lender
+        const [loans] = await db.execute('SELECT id FROM loans WHERE lender_id = ?', [id]);
+        const loanIds = loans.map(l => l.id);
+
+        if (loanIds.length > 0) {
+            const placeholders = loanIds.map(() => '?').join(',');
+            // Delete collaterals, payments, installments, default_ledger entries for these loans
+            await db.execute(`DELETE FROM collaterals WHERE loan_id IN (${placeholders})`, loanIds);
+            await db.execute(`DELETE FROM payments WHERE loan_id IN (${placeholders})`, loanIds);
+            await db.execute(`DELETE FROM loan_installments WHERE loan_id IN (${placeholders})`, loanIds);
+            await db.execute(`DELETE FROM default_ledger WHERE loan_id IN (${placeholders})`, loanIds);
+            // Delete the loans themselves
+            await db.execute(`DELETE FROM loans WHERE lender_id = ?`, [id]);
+        }
+
+        // 2. Delete lender-borrower junction entries
+        await db.execute('DELETE FROM lender_borrowers WHERE lender_id = ?', [id]);
+
+        // 3. Delete referral records
+        await db.execute('DELETE FROM referral_rewards WHERE referrer_id = ?', [id]);
+        await db.execute('DELETE FROM referrals WHERE referrer_id = ?', [id]);
+
+        // 4. Delete upgrade requests
+        await db.execute('DELETE FROM upgrade_requests WHERE user_id = ?', [id]);
+
+        // 5. Delete default_ledger entries by lender_id
+        await db.execute('DELETE FROM default_ledger WHERE lender_id = ?', [id]);
+
+        // 6. Finally delete the user record
         await db.execute('DELETE FROM users WHERE id = ?', [id]);
 
-        res.json({ message: 'Lender deleted successfully' });
+        res.json({ message: 'Lender and all related data deleted successfully' });
     } catch (error) {
         console.error('Delete Lender Error:', error);
-        res.status(500).json({ message: 'Server error deleting lender' });
+        res.status(500).json({ message: error.message || 'Server error deleting lender' });
     }
 };
 
-// Admin - Delete Borrower
+// Admin - Delete Borrower (Manually delete all related data to avoid FK issues on any DB)
 exports.deleteBorrower = async (req, res) => {
     try {
         const { id } = req.params;
 
-        // 1. Get borrower info to find NRC (to delete associated user record)
+        // 1. Get borrower info
         const [borrower] = await db.execute('SELECT * FROM borrowers WHERE id = ?', [id]);
         if (borrower.length === 0) return res.status(404).json({ message: 'Borrower not found' });
 
@@ -338,18 +366,37 @@ exports.deleteBorrower = async (req, res) => {
         await db.execute('INSERT INTO audit_logs (action, user_id, details) VALUES (?, ?, ?)',
             ['DELETE_BORROWER', req.user.id, `Deleted borrower: ${borrower[0].name} (ID: ${id}, NRC: ${nrc})`]);
 
-        // 3. Delete from borrowers table
+        // 3. Get all loan IDs for this borrower
+        const [loans] = await db.execute('SELECT id FROM loans WHERE borrower_id = ?', [id]);
+        const loanIds = loans.map(l => l.id);
+
+        if (loanIds.length > 0) {
+            const placeholders = loanIds.map(() => '?').join(',');
+            // Delete collaterals, payments, installments, default_ledger entries for these loans
+            await db.execute(`DELETE FROM collaterals WHERE loan_id IN (${placeholders})`, loanIds);
+            await db.execute(`DELETE FROM payments WHERE loan_id IN (${placeholders})`, loanIds);
+            await db.execute(`DELETE FROM loan_installments WHERE loan_id IN (${placeholders})`, loanIds);
+            await db.execute(`DELETE FROM default_ledger WHERE loan_id IN (${placeholders})`, loanIds);
+            // Delete the loans themselves
+            await db.execute(`DELETE FROM loans WHERE borrower_id = ?`, [id]);
+        }
+
+        // 4. Delete lender-borrower junction and applications entries
+        await db.execute('DELETE FROM loan_applications WHERE borrower_id = ?', [id]);
+        await db.execute('DELETE FROM lender_borrowers WHERE borrower_id = ?', [id]);
+
+        // 5. Delete from borrowers table
         await db.execute('DELETE FROM borrowers WHERE id = ?', [id]);
 
-        // 4. Delete associated user record if exists (role must be borrower)
+        // 6. Delete associated user record if exists
         if (nrc) {
             await db.execute('DELETE FROM users WHERE nrc = ? AND role = "borrower"', [nrc]);
         }
 
-        res.json({ message: 'Borrower deleted successfully' });
+        res.json({ message: 'Borrower and all related data deleted successfully' });
     } catch (error) {
         console.error('Delete Borrower Error:', error);
-        res.status(500).json({ message: 'Server error deleting borrower' });
+        res.status(500).json({ message: error.message || 'Server error deleting borrower' });
     }
 };
 
@@ -443,6 +490,59 @@ exports.getLenderDetails = async (req, res) => {
             return res.status(404).json({ message: 'Lender not found' });
         }
         res.json(lenders[0]);
+    } catch (error) {
+        res.status(500).json({ message: error.message });
+    }
+};
+
+exports.getAllAdmins = async (req, res) => {
+    try {
+        const [admins] = await db.execute('SELECT id, name, email, phone, role, status, created_at FROM users WHERE role = "admin"');
+        res.json(admins);
+    } catch (error) {
+        res.status(500).json({ message: error.message });
+    }
+};
+
+exports.addAdmin = async (req, res) => {
+    try {
+        const { name, email, password } = req.body;
+        const bcrypt = require('bcryptjs');
+        const hashedPassword = await bcrypt.hash(password, 10);
+        
+        const [existing] = await db.execute('SELECT id FROM users WHERE email = ?', [email]);
+        if (existing.length > 0) return res.status(400).json({ message: 'Email already exists' });
+        
+        await db.execute('INSERT INTO users (name, email, password, phone, role, status, verificationStatus) VALUES (?, ?, ?, "0000000000", "admin", "active", "verified")', [name, email, hashedPassword]);
+        res.status(201).json({ message: 'Admin added successfully' });
+    } catch (error) {
+        res.status(500).json({ message: error.message });
+    }
+};
+
+exports.deleteAdmin = async (req, res) => {
+    try {
+        const { id } = req.params;
+        const [admins] = await db.execute('SELECT id FROM users WHERE role = "admin"');
+        if (admins.length <= 1) return res.status(400).json({ message: 'Cannot delete the only admin' });
+        
+        await db.execute('DELETE FROM users WHERE id = ? AND role = "admin"', [id]);
+        res.json({ message: 'Admin deleted successfully' });
+    } catch (error) {
+        res.status(500).json({ message: error.message });
+    }
+};
+
+exports.updateAdminEmail = async (req, res) => {
+    try {
+        const { id } = req.params;
+        const { email } = req.body;
+        
+        const [existing] = await db.execute('SELECT id FROM users WHERE email = ? AND id != ?', [email, id]);
+        if (existing.length > 0) return res.status(400).json({ message: 'Email already exists' });
+        
+        await db.execute('UPDATE users SET email = ? WHERE id = ? AND role = "admin"', [email, id]);
+        res.json({ message: 'Admin email updated successfully' });
     } catch (error) {
         res.status(500).json({ message: error.message });
     }

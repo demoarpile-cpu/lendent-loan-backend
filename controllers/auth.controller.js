@@ -153,14 +153,18 @@ exports.register = async (req, res) => {
         }
 
         console.log(`[Auth] Attempting to send OTP to Phone: ${phone}, Email: ${email || 'None'}`);
-        const notificationResult = await sendMultiChannel({
-            phone,
-            email: email || null,
-            smsBody: welcomeMessage,
-            emailSubject: 'LendaNet OTP Verification',
-            emailText: welcomeMessage
-        });
-        console.log('[Auth] OTP Notification Dispatch Result:', notificationResult);
+        try {
+            const notificationResult = await sendMultiChannel({
+                phone,
+                email: email || null,
+                smsBody: welcomeMessage,
+                emailSubject: 'LendaNet OTP Verification',
+                emailText: welcomeMessage
+            });
+            console.log('[Auth] OTP Notification Dispatch Result:', notificationResult);
+        } catch (notifError) {
+            console.error('[Auth] Failed to send OTP notification (Keys might be missing):', notifError.message);
+        }
 
         // Notify Admin of new registration
         try {
@@ -287,20 +291,31 @@ exports.login = async (req, res) => {
 exports.updateProfile = async (req, res) => {
     try {
         const userId = req.user.id;
+        console.log('[DEBUG updateProfile] req.body:', req.body);
         const { name, phone, email, businessName, newPassword, dob, airtel_money_number, mtn_money_number, zamtel_money_number, bank_name, bank_account_number, bank_account_name } = req.body;
         
-        // Robust Migration: Check if profile_image_url exists before adding it
+        // Robust Migration: Check if columns exist before adding
         try {
             const [columns] = await db.execute(`
                 SELECT COLUMN_NAME 
                 FROM INFORMATION_SCHEMA.COLUMNS 
                 WHERE TABLE_NAME = 'users' 
-                AND COLUMN_NAME = 'profile_image_url'
                 AND TABLE_SCHEMA = DATABASE()
             `);
-            if (columns.length === 0) {
-                await db.execute('ALTER TABLE users ADD COLUMN profile_image_url VARCHAR(255) DEFAULT NULL AFTER license_url');
+            const existingColumns = columns.map(c => c.COLUMN_NAME);
+
+            if (!existingColumns.includes('profile_image_url')) {
+                await db.execute('ALTER TABLE users ADD COLUMN profile_image_url VARCHAR(255) DEFAULT NULL');
                 console.log('Successfully added profile_image_url column');
+            }
+            if (!existingColumns.includes('airtel_money_number')) {
+                await db.execute('ALTER TABLE users ADD COLUMN airtel_money_number VARCHAR(100) DEFAULT NULL');
+                await db.execute('ALTER TABLE users ADD COLUMN mtn_money_number VARCHAR(100) DEFAULT NULL');
+                await db.execute('ALTER TABLE users ADD COLUMN zamtel_money_number VARCHAR(100) DEFAULT NULL');
+                await db.execute('ALTER TABLE users ADD COLUMN bank_name VARCHAR(100) DEFAULT NULL');
+                await db.execute('ALTER TABLE users ADD COLUMN bank_account_number VARCHAR(100) DEFAULT NULL');
+                await db.execute('ALTER TABLE users ADD COLUMN bank_account_name VARCHAR(100) DEFAULT NULL');
+                console.log('Successfully added payment columns');
             }
         } catch (e) { 
             console.error('Migration Warning:', e.message);
@@ -364,6 +379,8 @@ exports.updateProfile = async (req, res) => {
         }
 
         params.push(userId);
+        console.log('[DEBUG updateProfile] Executing Query:', `UPDATE users SET ${updates.join(', ')} WHERE id = ?`);
+        console.log('[DEBUG updateProfile] Params:', params);
         await db.execute(`UPDATE users SET ${updates.join(', ')} WHERE id = ?`, params);
 
         // Fetch fresh user data
