@@ -181,7 +181,7 @@ async function sendEmail({ to, subject, html, text }) {
                     body: JSON.stringify({
                         personalizations: [{ to: [{ email: to }] }],
                         from: { 
-                            email: 'support@lendanet.com', 
+                            email: (emailFrom || 'support@lendanet.com').replace(/.*<(.+)>.*/, '$1').trim(), 
                             name: 'LendaNet Support' 
                         },
                         subject: subject,
