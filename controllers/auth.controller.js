@@ -448,6 +448,9 @@ exports.updateProfile = async (req, res) => {
         });
     } catch (error) {
         console.error('Update Profile Error:', error);
+        if (error.code === 'ER_DUP_ENTRY') {
+            return res.status(400).json({ message: 'This email or phone number is already registered to another account.' });
+        }
         res.status(500).json({ message: 'Server error updating profile' });
     }
 };
