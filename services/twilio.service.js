@@ -167,18 +167,45 @@ async function sendEmail({ to, subject, html, text }) {
     // SMTP Option
     if (mailTransporter) {
         try {
-            console.log(`[Email] Dispatching SMTP email to ${to}...`);
-            await mailTransporter.sendMail({
-                from: emailFrom || smtpUser,
-                to,
-                subject,
-                text,
-                html
-            });
-            console.log(`[Email] SMTP email sent successfully.`);
+            console.log(`[Email] Dispatching email to ${to}...`);
+            
+            // Use SendGrid HTTP API instead of SMTP to avoid Railway port blocks
+            if (smtpHost.includes('sendgrid')) {
+                const sendgridApiKey = smtpPass;
+                const response = await fetch('https://api.sendgrid.com/v3/mail/send', {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${sendgridApiKey}`,
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        personalizations: [{ to: [{ email: to }] }],
+                        from: { email: emailFrom || 'support@lendanet.com', name: 'LendaNet Support' },
+                        subject: subject,
+                        content: [
+                            { type: 'text/plain', value: text || (html ? html.replace(/<[^>]*>/g, '') : '') },
+                            ...(html ? [{ type: 'text/html', value: html }] : [])
+                        ]
+                    })
+                });
+                
+                if (!response.ok) {
+                    const errorText = await response.text();
+                    throw new Error(`SendGrid API Error: ${response.status} ${errorText}`);
+                }
+            } else {
+                await mailTransporter.sendMail({
+                    from: emailFrom || smtpUser,
+                    to,
+                    subject,
+                    text,
+                    html
+                });
+            }
+            console.log(`[Email] Email sent successfully.`);
             return { ok: true };
         } catch (error) {
-            console.error(`[Email] SMTP delivery failed: ${error.message}`);
+            console.error(`[Email] Delivery failed: ${error.message}`);
             // Fallback to console mock
             printMockEmail(to, subject, text, html);
             return { ok: true, fallback: true, reason: error.message };
