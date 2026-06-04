@@ -172,13 +172,9 @@ async function sendEmail({ to, subject, html, text }) {
             // Use SendGrid HTTP API instead of SMTP to avoid Railway port blocks
             if (smtpHost.includes('sendgrid')) {
                 const sendgridApiKey = smtpPass;
-                const response = await fetch('https://api.sendgrid.com/v3/mail/send', {
-                    method: 'POST',
-                    headers: {
-                        'Authorization': `Bearer ${sendgridApiKey}`,
-                        'Content-Type': 'application/json'
-                    },
-                    body: JSON.stringify({
+                const axios = require('axios');
+                try {
+                    await axios.post('https://api.sendgrid.com/v3/mail/send', {
                         personalizations: [{ to: [{ email: to }] }],
                         from: { 
                             email: (emailFrom || 'support@lendanet.com').replace(/.*<(.+)>.*/, '$1').trim(), 
@@ -189,12 +185,14 @@ async function sendEmail({ to, subject, html, text }) {
                             { type: 'text/plain', value: text || (html ? html.replace(/<[^>]*>/g, '') : '') },
                             ...(html ? [{ type: 'text/html', value: html }] : [])
                         ]
-                    })
-                });
-                
-                if (!response.ok) {
-                    const errorText = await response.text();
-                    throw new Error(`SendGrid API Error: ${response.status} ${errorText}`);
+                    }, {
+                        headers: {
+                            'Authorization': `Bearer ${sendgridApiKey}`,
+                            'Content-Type': 'application/json'
+                        }
+                    });
+                } catch (apiError) {
+                    throw new Error(`SendGrid API Error: ${apiError.response ? JSON.stringify(apiError.response.data) : apiError.message}`);
                 }
             } else {
                 await mailTransporter.sendMail({
