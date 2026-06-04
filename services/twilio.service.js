@@ -180,7 +180,10 @@ async function sendEmail({ to, subject, html, text }) {
                     },
                     body: JSON.stringify({
                         personalizations: [{ to: [{ email: to }] }],
-                        from: { email: emailFrom || 'support@lendanet.com', name: 'LendaNet Support' },
+                        from: { 
+                            email: (emailFrom.match(/<([^>]+)>/) ? emailFrom.match(/<([^>]+)>/)[1] : emailFrom) || 'support@lendanet.com', 
+                            name: 'LendaNet Support' 
+                        },
                         subject: subject,
                         content: [
                             { type: 'text/plain', value: text || (html ? html.replace(/<[^>]*>/g, '') : '') },
