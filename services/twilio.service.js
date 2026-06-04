@@ -164,20 +164,20 @@ async function sendEmail({ to, subject, html, text }) {
         return { ok: true, mock: true };
     }
 
-    // SMTP Option
-    if (mailTransporter) {
+    // Notification Option (API or SMTP)
+    if (smtpPass || mailTransporter) {
         try {
             console.log(`[Email] Dispatching email to ${to}...`);
             
             // Use SendGrid HTTP API instead of SMTP to avoid Railway port blocks
-            if (smtpHost.includes('sendgrid')) {
+            if ((smtpHost && smtpHost.includes('sendgrid')) || (smtpPass && smtpPass.startsWith('SG.'))) {
                 const sendgridApiKey = smtpPass;
                 const axios = require('axios');
                 try {
                     await axios.post('https://api.sendgrid.com/v3/mail/send', {
                         personalizations: [{ to: [{ email: to }] }],
                         from: { 
-                            email: (emailFrom || 'support@lendanet.com').replace(/.*<(.+)>.*/, '$1').trim(), 
+                            email: (emailFrom || 'support@lendanet.com').replace(/.*<([^>]+)>.*/, '$1').trim(), 
                             name: 'LendaNet Support' 
                         },
                         subject: subject,
@@ -194,7 +194,7 @@ async function sendEmail({ to, subject, html, text }) {
                 } catch (apiError) {
                     throw new Error(`SendGrid API Error: ${apiError.response ? JSON.stringify(apiError.response.data) : apiError.message}`);
                 }
-            } else {
+            } else if (mailTransporter) {
                 await mailTransporter.sendMail({
                     from: emailFrom || smtpUser,
                     to,
@@ -202,6 +202,8 @@ async function sendEmail({ to, subject, html, text }) {
                     text,
                     html
                 });
+            } else {
+                throw new Error('No valid email configuration found (SMTP or API)');
             }
             console.log(`[Email] Email sent successfully.`);
             return { ok: true };
