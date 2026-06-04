@@ -490,6 +490,201 @@ exports.getLenderDetails = async (req, res) => {
             return res.status(404).json({ message: 'Lender not found' });
         }
         res.json(lenders[0]);
+        res.json({ message: 'Lender status updated successfully' });
+    } catch (error) {
+        res.status(500).json({ message: error.message });
+    }
+};
+
+// Admin - Delete Lender (Manually delete all related data to avoid FK issues on any DB)
+exports.deleteLender = async (req, res) => {
+    try {
+        const { id } = req.params;
+
+        const [lender] = await db.execute('SELECT * FROM users WHERE id = ? AND role = "lender"', [id]);
+        if (lender.length === 0) return res.status(404).json({ message: 'Lender not found' });
+
+        // Audit log before delete
+        await db.execute('INSERT INTO audit_logs (action, user_id, details) VALUES (?, ?, ?)',
+            ['DELETE_LENDER', req.user.id, `Deleted lender: ${lender[0].name} (ID: ${id})`]);
+
+        // 1. Get all loan IDs for this lender
+        const [loans] = await db.execute('SELECT id FROM loans WHERE lender_id = ?', [id]);
+        const loanIds = loans.map(l => l.id);
+
+        if (loanIds.length > 0) {
+            const placeholders = loanIds.map(() => '?').join(',');
+            // Delete collaterals, payments, installments, default_ledger entries for these loans
+            await db.execute(`DELETE FROM collaterals WHERE loan_id IN (${placeholders})`, loanIds);
+            await db.execute(`DELETE FROM payments WHERE loan_id IN (${placeholders})`, loanIds);
+            await db.execute(`DELETE FROM loan_installments WHERE loan_id IN (${placeholders})`, loanIds);
+            await db.execute(`DELETE FROM default_ledger WHERE loan_id IN (${placeholders})`, loanIds);
+            // Delete the loans themselves
+            await db.execute(`DELETE FROM loans WHERE lender_id = ?`, [id]);
+        }
+
+        // 2. Delete lender-borrower junction entries
+        await db.execute('DELETE FROM lender_borrowers WHERE lender_id = ?', [id]);
+
+        // 3. Delete referral records
+        await db.execute('DELETE FROM referral_rewards WHERE referrer_id = ?', [id]);
+        await db.execute('DELETE FROM referrals WHERE referrer_id = ?', [id]);
+
+        // 4. Delete upgrade requests
+        await db.execute('DELETE FROM upgrade_requests WHERE user_id = ?', [id]);
+
+        // 5. Delete default_ledger entries by lender_id
+        await db.execute('DELETE FROM default_ledger WHERE lender_id = ?', [id]);
+
+        // 6. Finally delete the user record
+        await db.execute('DELETE FROM users WHERE id = ?', [id]);
+
+        res.json({ message: 'Lender and all related data deleted successfully' });
+    } catch (error) {
+        console.error('Delete Lender Error:', error);
+        res.status(500).json({ message: error.message || 'Server error deleting lender' });
+    }
+};
+
+// Admin - Delete Borrower (Manually delete all related data to avoid FK issues on any DB)
+exports.deleteBorrower = async (req, res) => {
+    try {
+        const { id } = req.params;
+
+        // 1. Get borrower info
+        const [borrower] = await db.execute('SELECT * FROM borrowers WHERE id = ?', [id]);
+        if (borrower.length === 0) return res.status(404).json({ message: 'Borrower not found' });
+
+        const nrc = borrower[0].nrc;
+
+        // 2. Audit log before delete
+        await db.execute('INSERT INTO audit_logs (action, user_id, details) VALUES (?, ?, ?)',
+            ['DELETE_BORROWER', req.user.id, `Deleted borrower: ${borrower[0].name} (ID: ${id}, NRC: ${nrc})`]);
+
+        // 3. Get all loan IDs for this borrower
+        const [loans] = await db.execute('SELECT id FROM loans WHERE borrower_id = ?', [id]);
+        const loanIds = loans.map(l => l.id);
+
+        if (loanIds.length > 0) {
+            const placeholders = loanIds.map(() => '?').join(',');
+            // Delete collaterals, payments, installments, default_ledger entries for these loans
+            await db.execute(`DELETE FROM collaterals WHERE loan_id IN (${placeholders})`, loanIds);
+            await db.execute(`DELETE FROM payments WHERE loan_id IN (${placeholders})`, loanIds);
+            await db.execute(`DELETE FROM loan_installments WHERE loan_id IN (${placeholders})`, loanIds);
+            await db.execute(`DELETE FROM default_ledger WHERE loan_id IN (${placeholders})`, loanIds);
+            // Delete the loans themselves
+            await db.execute(`DELETE FROM loans WHERE borrower_id = ?`, [id]);
+        }
+
+        // 4. Delete lender-borrower junction and applications entries
+        await db.execute('DELETE FROM loan_applications WHERE borrower_id = ?', [id]);
+        await db.execute('DELETE FROM lender_borrowers WHERE borrower_id = ?', [id]);
+
+        // 5. Delete from borrowers table
+        await db.execute('DELETE FROM borrowers WHERE id = ?', [id]);
+
+        // 6. Delete associated user record if exists
+        if (nrc) {
+            await db.execute('DELETE FROM users WHERE nrc = ? AND role = "borrower"', [nrc]);
+        }
+
+        res.json({ message: 'Borrower and all related data deleted successfully' });
+    } catch (error) {
+        console.error('Delete Borrower Error:', error);
+        res.status(500).json({ message: error.message || 'Server error deleting borrower' });
+    }
+};
+
+// Admin - Get Single Lender Details
+// Get all loans for a specific lender (Admin view)
+exports.getLenderLoans = async (req, res) => {
+    try {
+        const { id } = req.params;
+        const [loans] = await db.execute(
+            `SELECT l.*, b.name as borrowerName, b.nrc as borrowerNRC
+             FROM loans l
+             JOIN borrowers b ON l.borrower_id = b.id
+             WHERE l.lender_id = ?
+             ORDER BY l.created_at DESC`,
+            [id]
+        );
+
+        for (let loan of loans) {
+            const [installments] = await db.execute(
+                'SELECT * FROM loan_installments WHERE loan_id = ? ORDER BY due_date ASC',
+                [loan.id]
+            );
+            loan.instalmentSchedule = installments;
+        }
+
+        res.json(loans);
+    } catch (error) {
+        res.status(500).json({ message: error.message });
+    }
+};
+
+// Admin - Create Loan for a Lender
+exports.createLoan = async (req, res) => {
+    try {
+        const { borrowerId, lenderId, amount, interestRate, installmentsCount, type, issueDate, dueDate } = req.body;
+
+        if (!borrowerId || !lenderId || !amount) {
+            return res.status(400).json({ message: 'Borrower, Lender and Amount are required' });
+        }
+
+        const finalInterestRate = interestRate || 0;
+        const finalInstallmentsCount = installmentsCount || 3;
+        const finalIssueDate = issueDate || new Date().toISOString().split('T')[0];
+
+        // Calculate due date if not provided (default to months count)
+        let finalDueDate = dueDate;
+        if (!finalDueDate) {
+            const d = new Date(finalIssueDate);
+            d.setMonth(d.getMonth() + finalInstallmentsCount);
+            finalDueDate = d.toISOString().split('T')[0];
+        }
+
+        // 1. Insert Loan
+        const [loanResult] = await db.execute(
+            'INSERT INTO loans (lender_id, borrower_id, amount, interest_rate, issue_date, due_date, type, created_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+            [lenderId, borrowerId, amount, finalInterestRate, finalIssueDate, finalDueDate, type, req.user.id]
+        );
+        const loanId = loanResult.insertId;
+
+        // 2. Generate Installments
+        const totalAmount = parseFloat(amount) + (parseFloat(amount) * (parseFloat(finalInterestRate) / 100));
+        const installmentAmount = totalAmount / finalInstallmentsCount;
+
+        for (let i = 1; i <= finalInstallmentsCount; i++) {
+            const installmentDueDate = new Date(finalIssueDate);
+            installmentDueDate.setMonth(installmentDueDate.getMonth() + i);
+
+            await db.execute(
+                'INSERT INTO loan_installments (loan_id, due_date, amount) VALUES (?, ?, ?)',
+                [loanId, installmentDueDate, installmentAmount]
+            );
+        }
+
+        // 3. Add Audit Log
+        await db.execute('INSERT INTO audit_logs (action, user_id, details) VALUES (?, ?, ?)',
+            ['CREATE_LOAN_ADMIN', req.user.id, `Admin created loan of K${amount} for borrower ${borrowerId} on behalf of lender ${lenderId}`]);
+
+        res.status(201).json({ message: 'Loan created successfully by Admin', loanId });
+    } catch (error) {
+        console.error('Admin Create Loan Error:', error);
+        res.status(500).json({ message: 'Server error creating loan' });
+    }
+};
+
+exports.getLenderDetails = async (req, res) => {
+    try {
+        const { id } = req.params;
+        const [lenders] = await db.execute('SELECT id, lender_id, name, phone, email, nrc, company_registration_number, business_name, lender_type, plan_type, license_url, nrc_url, role, status, verificationStatus, membership_tier, created_at FROM users WHERE id = ? AND role = "lender"', [id]);
+
+        if (lenders.length === 0) {
+            return res.status(404).json({ message: 'Lender not found' });
+        }
+        res.json(lenders[0]);
     } catch (error) {
         res.status(500).json({ message: error.message });
     }
@@ -512,8 +707,8 @@ exports.addAdmin = async (req, res) => {
         
         const [existing] = await db.execute('SELECT id FROM users WHERE email = ?', [email]);
         if (existing.length > 0) return res.status(400).json({ message: 'Email already exists' });
-        
-        await db.execute('INSERT INTO users (name, email, password, phone, role, status, verificationStatus) VALUES (?, ?, ?, "0000000000", "admin", "active", "verified")', [name, email, hashedPassword]);
+        const fakePhone = Math.floor(1000000000 + Math.random() * 9000000000).toString();
+        await db.execute('INSERT INTO users (name, email, password, phone, role, status, verificationStatus) VALUES (?, ?, ?, ?, "admin", "active", "verified")', [name, email, hashedPassword, fakePhone]);
         res.status(201).json({ message: 'Admin added successfully' });
     } catch (error) {
         res.status(500).json({ message: error.message });

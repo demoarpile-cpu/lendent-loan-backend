@@ -152,38 +152,38 @@ exports.register = async (req, res) => {
             welcomeMessage += ` Your temporary password is: ${password}. Please change it after login.`;
         }
 
-        console.log(`[Auth] Attempting to send OTP to Phone: ${phone}, Email: ${email || 'None'}`);
-        try {
-            const notificationResult = await sendMultiChannel({
-                phone,
-                email: email || null,
-                smsBody: welcomeMessage,
-                emailSubject: 'LendaNet OTP Verification',
-                emailText: welcomeMessage
-            });
+        // Send OTP Notification (Non-blocking)
+        sendMultiChannel({
+            phone,
+            email: email || null,
+            smsBody: welcomeMessage,
+            emailSubject: 'LendaNet OTP Verification',
+            emailText: welcomeMessage
+        }).then(notificationResult => {
             console.log('[Auth] OTP Notification Dispatch Result:', notificationResult);
-        } catch (notifError) {
+        }).catch(notifError => {
             console.error('[Auth] Failed to send OTP notification (Keys might be missing):', notifError.message);
-        }
+        });
 
-        // Notify Admin of new registration
-        try {
-            const [admins] = await db.execute('SELECT phone, email, one_signal_player_id FROM users WHERE role = "admin" AND status = "active"');
-            for (const admin of admins) {
-                await sendMultiChannel({
-                    phone: admin.phone,
-                    email: admin.email,
-                    oneSignalPlayerId: admin.one_signal_player_id,
-                    smsBody: `LendaNet Alert: New ${role} (${name}) has registered and is pending approval.`,
-                    emailSubject: 'New User Registration Pending Approval',
-                    emailText: `A new ${role} named ${name} (${phone}) has registered on the platform and requires your approval.`,
-                    pushTitle: 'New Registration',
-                    pushBody: `New ${role} (${name}) requires approval.`
-                });
-            }
-        } catch (adminNotifError) {
-            console.error('[Auth] Failed to notify admin of new registration:', adminNotifError);
-        }
+        // Notify Admin of new registration (Non-blocking)
+        db.execute('SELECT phone, email, one_signal_player_id FROM users WHERE role = "admin" AND status = "active"')
+            .then(([admins]) => {
+                for (const admin of admins) {
+                    sendMultiChannel({
+                        phone: admin.phone,
+                        email: admin.email,
+                        oneSignalPlayerId: admin.one_signal_player_id,
+                        smsBody: `LendaNet Alert: New ${role} (${name}) has registered and is pending approval.`,
+                        emailSubject: 'New User Registration Pending Approval',
+                        emailText: `A new ${role} named ${name} (${phone}) has registered on the platform and requires your approval.`,
+                        pushTitle: 'New Registration',
+                        pushBody: `New ${role} (${name}) requires approval.`
+                    }).catch(adminNotifError => {
+                        console.error('[Auth] Failed to notify admin of new registration:', adminNotifError);
+                    });
+                }
+            })
+            .catch(err => console.error('[Auth] Error fetching admins for notification:', err));
 
         res.status(201).json({
             message: 'Registration successful. Please verify OTP.',
@@ -248,6 +248,10 @@ exports.login = async (req, res) => {
         if (user.plan_type === 'monthly') planLabel = 'Premium Plan (Monthly)';
         if (user.plan_type === 'annual') planLabel = 'Premium Plan (Annual)';
 
+        // Check for pending upgrade request
+        const [upgradeReqs] = await db.execute('SELECT id FROM upgrade_requests WHERE user_id = ? AND status = "pending"', [user.id]);
+        const hasPendingUpgrade = upgradeReqs.length > 0;
+
         res.json({
             token,
             user: {
@@ -278,7 +282,8 @@ exports.login = async (req, res) => {
                 zamtel_money_number: user.zamtel_money_number,
                 bank_name: user.bank_name,
                 bank_account_number: user.bank_account_number,
-                bank_account_name: user.bank_account_name
+                bank_account_name: user.bank_account_name,
+                hasPendingUpgrade
             }
         });
     } catch (error) {
@@ -458,6 +463,10 @@ exports.getMe = async (req, res) => {
         if (user.plan_type === 'monthly') planLabel = 'Premium Plan (Monthly)';
         if (user.plan_type === 'annual') planLabel = 'Premium Plan (Annual)';
 
+        // Check for pending upgrade request
+        const [upgradeReqs] = await db.execute('SELECT id FROM upgrade_requests WHERE user_id = ? AND status = "pending"', [req.user.id]);
+        const hasPendingUpgrade = upgradeReqs.length > 0;
+
         res.json({
             id: user.id,
             lender_id: user.lender_id,
@@ -486,7 +495,8 @@ exports.getMe = async (req, res) => {
             zamtel_money_number: user.zamtel_money_number,
             bank_name: user.bank_name,
             bank_account_number: user.bank_account_number,
-            bank_account_name: user.bank_account_name
+            bank_account_name: user.bank_account_name,
+            hasPendingUpgrade
         });
     } catch (error) {
         console.error(error);
@@ -585,13 +595,13 @@ exports.forgotPassword = async (req, res) => {
         console.log('FOR USER ID:', user.id);
         console.log('-----------------------------------------');
 
-        await sendMultiChannel({
+        sendMultiChannel({
             phone: user.phone,
             email: user.email,
             smsBody: message,
             emailSubject: 'LendaNet Password Reset',
             emailText: message
-        });
+        }).catch(err => console.error('Failed to send reset OTP:', err.message));
 
         res.json({ message: 'Password reset OTP sent', userId: user.id });
     } catch (error) {

@@ -573,7 +573,7 @@ exports.updateApplicationStatus = async (req, res) => {
                 emailText: `Your loan application has been ${status}.`,
                 pushTitle: 'Application update',
                 pushBody: `Your loan application is ${status}.`
-            });
+            }).catch(err => console.error('Notification error in updateApplicationStatus:', err));
         }
 
         res.json({ message: `Application ${status} successfully!` });

@@ -47,7 +47,7 @@ exports.requestUpgrade = async (req, res) => {
             const [admins] = await db.execute('SELECT phone, email, one_signal_player_id FROM users WHERE role = "admin" AND status = "active"');
             
             for (const admin of admins) {
-                await sendMultiChannel({
+                sendMultiChannel({
                     phone: admin.phone,
                     email: admin.email,
                     oneSignalPlayerId: admin.one_signal_player_id,
@@ -56,7 +56,7 @@ exports.requestUpgrade = async (req, res) => {
                     emailText: `${userName} has requested to upgrade their membership to the ${selected_plan} plan. Please review in the admin panel.`,
                     pushTitle: 'Upgrade Request',
                     pushBody: `${userName} requested ${selected_plan} upgrade.`
-                });
+                }).catch(err => console.error('Admin notification failed:', err.message));
             }
         } catch (adminNotifError) {
             console.error('[Membership] Failed to notify admin of upgrade request:', adminNotifError);
