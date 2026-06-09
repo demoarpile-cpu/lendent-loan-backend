@@ -347,12 +347,6 @@ exports.updateBorrower = async (req, res) => {
             if (nrc) { userUpdates.push('nrc = ?'); userParams.push(nrc); }
             if (photoUrl) { userUpdates.push('profile_image_url = ?'); userParams.push(photoUrl); }
             if (nrcUrl) { userUpdates.push('license_url = ?'); userParams.push(nrcUrl); }
-            
-            if (password) {
-                const hashedPassword = await bcrypt.hash(password, 10);
-                userUpdates.push('password = ?');
-                userParams.push(hashedPassword);
-            }
 
             if (userUpdates.length > 0) {
                 userParams.push(userId);
@@ -363,7 +357,10 @@ exports.updateBorrower = async (req, res) => {
         res.json({ message: 'Borrower and associated user account updated successfully' });
     } catch (error) {
         console.error('Update Borrower Error:', error);
-        res.status(500).json({ message: 'Server error updating borrower' });
+        if (error.code === 'ER_DUP_ENTRY') {
+            return res.status(400).json({ message: 'Email or Phone number is already in use by another account.' });
+        }
+        res.status(500).json({ message: 'Server error updating borrower', error: error.message, stack: error.stack });
     }
 };
 

@@ -274,7 +274,8 @@ exports.updateSetting = async (req, res) => {
 exports.updateMembership = async (req, res) => {
     try {
         const { userId, tier } = req.body;
-        await db.execute('UPDATE users SET membership_tier = ? WHERE id = ?', [tier, userId]);
+        const planType = tier === 'premium' ? 'monthly' : 'free';
+        await db.execute('UPDATE users SET membership_tier = ?, plan_type = ? WHERE id = ?', [tier, planType, userId]);
 
         await db.execute('INSERT INTO audit_logs (action, user_id, details) VALUES (?, ?, ?)',
             ['UPDATE_MEMBERSHIP', req.user.id, `Updated user ${userId} to tier: ${tier}`]);
