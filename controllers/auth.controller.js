@@ -591,7 +591,7 @@ exports.forgotPassword = async (req, res) => {
         const otpExpiresAt = new Date(Date.now() + 15 * 60 * 1000); // 15 mins
 
         await db.execute(
-            'UPDATE users SET otp_code = ?, otp_expires_at = ? WHERE id = ?',
+            'UPDATE users SET otp_code = ?, otp_expires_at = ?, otp_failed_attempts = 0 WHERE id = ?',
             [otpCode, otpExpiresAt, user.id]
         );
 
@@ -627,7 +627,7 @@ exports.resetPassword = async (req, res) => {
         }
 
         const [users] = await db.execute(
-            'SELECT id, otp_code, otp_expires_at FROM users WHERE id = ?',
+            'SELECT id, otp_code, otp_expires_at, otp_failed_attempts FROM users WHERE id = ?',
             [userId]
         );
 
@@ -636,16 +636,27 @@ exports.resetPassword = async (req, res) => {
         }
 
         const user = users[0];
+
+        // Security: Block after 5 failed OTP attempts
+        if ((user.otp_failed_attempts || 0) >= 5) {
+            await db.execute('UPDATE users SET otp_code = NULL, otp_expires_at = NULL, otp_failed_attempts = 0 WHERE id = ?', [userId]);
+            return res.status(429).json({ message: 'Too many failed attempts. Please request a new OTP.' });
+        }
+
         if (!user.otp_code || !user.otp_expires_at) {
             return res.status(400).json({ message: 'OTP not requested or expired' });
         }
 
-        if (String(user.otp_code) !== String(otp)) {
-            return res.status(400).json({ message: 'Invalid OTP' });
+        if (new Date(user.otp_expires_at).getTime() < Date.now()) {
+            await db.execute('UPDATE users SET otp_code = NULL, otp_expires_at = NULL, otp_failed_attempts = 0 WHERE id = ?', [userId]);
+            return res.status(400).json({ message: 'OTP expired. Please request a new one.' });
         }
 
-        if (new Date(user.otp_expires_at).getTime() < Date.now()) {
-            return res.status(400).json({ message: 'OTP expired' });
+        if (String(user.otp_code) !== String(otp)) {
+            // Increment failed attempts
+            await db.execute('UPDATE users SET otp_failed_attempts = COALESCE(otp_failed_attempts, 0) + 1 WHERE id = ?', [userId]);
+            const remaining = 4 - (user.otp_failed_attempts || 0);
+            return res.status(400).json({ message: `Invalid OTP. ${remaining > 0 ? remaining + ' attempts remaining.' : 'Please request a new OTP.'}` });
         }
 
         // Validate new password strength

@@ -273,8 +273,6 @@ exports.enableLogin = async (req, res) => {
         );
 
         // Send Credentials Notification
-        const { sendMultiChannel } = require('./notification.service'); // Note: it's in services/
-        // Wait, I need the correct path
         const notificationService = require('../services/notification.service');
         
         await notificationService.sendMultiChannel({

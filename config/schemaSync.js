@@ -60,6 +60,16 @@ async function syncSchema() {
             }
         }
 
+        // Security: Add otp_failed_attempts column for OTP brute-force protection
+        try {
+            await db.execute('ALTER TABLE users ADD COLUMN otp_failed_attempts TINYINT UNSIGNED NOT NULL DEFAULT 0 AFTER otp_expires_at');
+            console.log('[DB-SYNC] Added "otp_failed_attempts" column to "users" table.');
+        } catch (error) {
+            if (!(error.code === 'ER_DUP_FIELDNAME' || error.message.includes('Duplicate column'))) {
+                throw error;
+            }
+        }
+
         console.log('[DB-SYNC] Database schema is up to date.');
     } catch (error) {
         console.error('[DB-SYNC] Failed to sync database schema:', error.message);
