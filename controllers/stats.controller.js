@@ -7,13 +7,21 @@ exports.getLenderStats = async (req, res) => {
         // Total Portfolio & Active/Default counts
         const [counts] = await db.execute(`
             SELECT 
-                COALESCE(SUM(amount), 0) as totalPortfolio,
                 COUNT(*) as totalLoans,
                 SUM(CASE WHEN status = 'active' THEN 1 ELSE 0 END) as activeLoans,
                 SUM(CASE WHEN status = 'default' THEN 1 ELSE 0 END) as defaultedLoans
             FROM loans 
             WHERE lender_id = ?
         `, [lenderId]);
+
+        // Outstanding Portfolio (Includes Interest)
+        const [portfolio] = await db.execute(`
+            SELECT COALESCE(SUM(li.amount), 0) as totalPortfolio
+            FROM loan_installments li
+            JOIN loans l ON li.loan_id = l.id
+            WHERE l.lender_id = ? AND l.status IN ('active', 'default', 'locked') AND li.status IN ('pending', 'missed')
+        `, [lenderId]);
+        counts[0].totalPortfolio = portfolio[0].totalPortfolio;
 
         // Recent Activity
         const [recent] = await db.execute(`
@@ -41,11 +49,12 @@ exports.getLenderStats = async (req, res) => {
 
 exports.getAdminStats = async (req, res) => {
     try {
-        // Total Portfolio (Sum of all active, default, and locked loans)
+        // Total Portfolio (Sum of all pending/missed installments which include interest)
         const [portfolio] = await db.execute(`
-            SELECT SUM(amount) as totalPortfolio 
-            FROM loans 
-            WHERE status IN ('active', 'default', 'locked')
+            SELECT COALESCE(SUM(li.amount), 0) as totalPortfolio 
+            FROM loan_installments li
+            JOIN loans l ON li.loan_id = l.id
+            WHERE l.status IN ('active', 'default', 'locked') AND li.status IN ('pending', 'missed')
         `);
         
         // Lender counts
@@ -112,13 +121,20 @@ exports.getBorrowerStats = async (req, res) => {
         // 2. Stats
         const [counts] = await db.execute(`
             SELECT 
-                COALESCE(SUM(amount), 0) as totalDebt,
                 COUNT(*) as totalLoans,
                 SUM(CASE WHEN status = 'active' THEN 1 ELSE 0 END) as activeLoans,
                 SUM(CASE WHEN status = 'default' THEN 1 ELSE 0 END) as defaultedLoans
             FROM loans 
             WHERE borrower_id = ?
         `, [bId]);
+
+        const [debt] = await db.execute(`
+            SELECT COALESCE(SUM(li.amount), 0) as totalDebt
+            FROM loan_installments li
+            JOIN loans l ON li.loan_id = l.id
+            WHERE l.borrower_id = ? AND l.status IN ('active', 'default', 'locked') AND li.status IN ('pending', 'missed')
+        `, [bId]);
+        counts[0].totalDebt = debt[0].totalDebt;
 
         // 3. Recent Activity (Loans)
         const [recent] = await db.execute(`
