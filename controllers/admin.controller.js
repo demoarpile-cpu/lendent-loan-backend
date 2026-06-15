@@ -296,6 +296,24 @@ exports.updateLenderStatus = async (req, res) => {
         await db.execute('INSERT INTO audit_logs (action, user_id, details) VALUES (?, ?, ?)',
             ['UPDATE_LENDER_STATUS', req.user.id, `Updated lender ${userId} to ${status}/${verificationStatus}`]);
 
+        
+        if (verificationStatus === 'verified') {
+            const [users] = await db.execute('SELECT phone, email, name, one_signal_player_id FROM users WHERE id = ?', [userId]);
+            if (users.length > 0) {
+                const target = users[0];
+                await sendMultiChannel({
+                    phone: target.phone,
+                    email: target.email,
+                    oneSignalPlayerId: target.one_signal_player_id,
+                    smsBody: `Hello ${target.name}, your LendaNet account has been verified and is now active!`,
+                    emailSubject: 'Account Verified - LendaNet',
+                    emailText: `Hello ${target.name},\n\nYour LendaNet account has been successfully verified by the admin and is now active.\n\nYou can now log in and start using the platform.\n\nThank you,\nLendaNet Team`,
+                    pushTitle: 'Account Verified',
+                    pushBody: 'Your LendaNet account has been verified and is now active!'
+                });
+            }
+        }
+
         res.json({ message: 'Lender status updated successfully' });
     } catch (error) {
         res.status(500).json({ message: error.message });

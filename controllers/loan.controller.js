@@ -397,9 +397,10 @@ exports.getLoans = async (req, res) => {
         await autoMarkDefaults(lenderId);
 
         const [loans] = await db.execute(
-            `SELECT l.*, b.name as borrowerName, b.nrc as borrowerNRC
+            `SELECT l.*, b.name as borrowerName, b.nrc as borrowerNRC, b.phone as borrowerPhoneFallback, u.phone as borrowerPhone, u.email as borrowerEmail
              FROM loans l
              JOIN borrowers b ON l.borrower_id = b.id
+             LEFT JOIN users u ON u.nrc = b.nrc AND u.role = 'borrower'
              WHERE l.lender_id = ?`,
             [lenderId]
         );
