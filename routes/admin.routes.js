@@ -30,5 +30,6 @@ router.get('/admins', protect, admin, adminController.getAllAdmins);
 router.post('/admins', protect, admin, adminController.addAdmin);
 router.delete('/admins/:id', protect, admin, adminController.deleteAdmin);
 router.post('/admins/:id/email', protect, admin, adminController.updateAdminEmail);
+router.post('/admins/:id/phone', protect, admin, adminController.updateAdminPhone);
 
 module.exports = router;

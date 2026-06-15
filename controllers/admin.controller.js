@@ -720,14 +720,15 @@ exports.getAllAdmins = async (req, res) => {
 
 exports.addAdmin = async (req, res) => {
     try {
-        const { name, email, password } = req.body;
+        const { name, email, phone, password } = req.body;
         const bcrypt = require('bcryptjs');
         const hashedPassword = await bcrypt.hash(password, 10);
         
         const [existing] = await db.execute('SELECT id FROM users WHERE email = ?', [email]);
         if (existing.length > 0) return res.status(400).json({ message: 'Email already exists' });
-        const fakePhone = Math.floor(1000000000 + Math.random() * 9000000000).toString();
-        await db.execute('INSERT INTO users (name, email, password, phone, role, status, verificationStatus) VALUES (?, ?, ?, ?, "admin", "active", "verified")', [name, email, hashedPassword, fakePhone]);
+        
+        const adminPhone = phone || Math.floor(1000000000 + Math.random() * 9000000000).toString();
+        await db.execute('INSERT INTO users (name, email, password, phone, role, status, verificationStatus) VALUES (?, ?, ?, ?, "admin", "active", "verified")', [name, email, hashedPassword, adminPhone]);
         res.status(201).json({ message: 'Admin added successfully' });
     } catch (error) {
         res.status(500).json({ message: error.message });
@@ -757,6 +758,18 @@ exports.updateAdminEmail = async (req, res) => {
         
         await db.execute('UPDATE users SET email = ? WHERE id = ? AND role = "admin"', [email, id]);
         res.json({ message: 'Admin email updated successfully' });
+    } catch (error) {
+        res.status(500).json({ message: error.message });
+    }
+};
+
+exports.updateAdminPhone = async (req, res) => {
+    try {
+        const { id } = req.params;
+        const { phone } = req.body;
+        
+        await db.execute('UPDATE users SET phone = ? WHERE id = ? AND role = "admin"', [phone, id]);
+        res.json({ message: 'Admin phone updated successfully' });
     } catch (error) {
         res.status(500).json({ message: error.message });
     }
