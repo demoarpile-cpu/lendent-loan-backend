@@ -344,103 +344,98 @@ exports.updateLenderStatus = async (req, res) => {
 exports.deleteLender = async (req, res) => {
     try {
         const { id } = req.params;
-
-        const [lender] = await db.execute('SELECT * FROM users WHERE id = ? AND role = "lender"', [id]);
-        if (lender.length === 0) return res.status(404).json({ message: 'Lender not found' });
-
-        // Audit log before delete
-        await db.execute('INSERT INTO audit_logs (action, user_id, details) VALUES (?, ?, ?)',
-            ['DELETE_LENDER', req.user.id, `Deleted lender: ${lender[0].name} (ID: ${id})`]);
-
-        // 1. Get all loan IDs for this lender
-        const [loans] = await db.execute('SELECT id FROM loans WHERE lender_id = ?', [id]);
-        const loanIds = loans.map(l => l.id);
-
-        if (loanIds.length > 0) {
-            const placeholders = loanIds.map(() => '?').join(',');
-            // Delete collaterals, payments, installments, default_ledger entries for these loans
-            await db.execute(`DELETE FROM collaterals WHERE loan_id IN (${placeholders})`, loanIds);
-            await db.execute(`DELETE FROM payments WHERE loan_id IN (${placeholders})`, loanIds);
-            await db.execute(`DELETE FROM loan_installments WHERE loan_id IN (${placeholders})`, loanIds);
-            await db.execute(`DELETE FROM default_ledger WHERE loan_id IN (${placeholders})`, loanIds);
-            // Delete the loans themselves
-            await db.execute(`DELETE FROM loans WHERE lender_id = ?`, [id]);
+        const [lenders] = await db.execute('SELECT * FROM users WHERE id = ? AND role = "lender"', [id]);
+        
+        if (lenders.length === 0) {
+            return res.status(404).json({ message: 'Lender not found' });
         }
 
-        // 2. Delete lender-borrower junction entries
-        await db.execute('DELETE FROM lender_borrowers WHERE lender_id = ?', [id]);
+        const lender = lenders[0];
+        const isDeactivated = lender.status === 'deactivated';
+        
+        if (isDeactivated) {
+            // Reactivate
+            let newNrc = lender.nrc;
+            let newPhone = lender.phone;
+            let newEmail = lender.email;
+            
+            if (newNrc && newNrc.includes('_DEACT_')) newNrc = newNrc.split('_DEACT_')[0];
+            if (newPhone && newPhone.includes('_DEACT_')) newPhone = newPhone.split('_DEACT_')[0];
+            if (newEmail && newEmail.includes('_DEACT_')) newEmail = newEmail.split('_DEACT_')[0];
 
-        // 3. Delete referral records
-        await db.execute('DELETE FROM referral_rewards WHERE referrer_id = ?', [id]);
-        await db.execute('DELETE FROM referrals WHERE referrer_id = ?', [id]);
+            await db.execute(
+                'UPDATE users SET status = "active", nrc = ?, phone = ?, email = ? WHERE id = ?',
+                [newNrc, newPhone, newEmail, id]
+            );
+            res.json({ message: 'Lender reactivated successfully' });
+        } else {
+            // Deactivate
+            const suffix = '_DEACT_' + Date.now();
+            const newNrc = lender.nrc ? lender.nrc + suffix : null;
+            const newPhone = lender.phone ? lender.phone + suffix : null;
+            const newEmail = lender.email ? lender.email + suffix : null;
 
-        // 4. Delete upgrade requests
-        await db.execute('DELETE FROM upgrade_requests WHERE user_id = ?', [id]);
-
-        // 5. Delete default_ledger entries by lender_id
-        await db.execute('DELETE FROM default_ledger WHERE lender_id = ?', [id]);
-
-        // 6. Finally delete the user record
-        await db.execute('DELETE FROM users WHERE id = ?', [id]);
-
-        res.json({ message: 'Lender and all related data deleted successfully' });
+            await db.execute(
+                'UPDATE users SET status = "deactivated", nrc = ?, phone = ?, email = ? WHERE id = ?',
+                [newNrc, newPhone, newEmail, id]
+            );
+            res.json({ message: 'Lender deactivated successfully' });
+        }
     } catch (error) {
-        console.error('Delete Lender Error:', error);
-        res.status(500).json({ message: error.message || 'Server error deleting lender' });
+        console.error('Delete/Deactivate Lender Error:', error);
+        res.status(500).json({ message: error.message || 'Server error' });
     }
 };
 
-// Admin - Delete Borrower (Manually delete all related data to avoid FK issues on any DB)
 exports.deleteBorrower = async (req, res) => {
     try {
         const { id } = req.params;
+        const [borrowers] = await db.execute('SELECT * FROM borrowers WHERE id = ?', [id]);
+        if (borrowers.length === 0) return res.status(404).json({ message: 'Borrower not found' });
 
-        // 1. Get borrower info
-        const [borrower] = await db.execute('SELECT * FROM borrowers WHERE id = ?', [id]);
-        if (borrower.length === 0) return res.status(404).json({ message: 'Borrower not found' });
+        const borrower = borrowers[0];
+        const nrc = borrower.nrc;
+        
+        // Find corresponding user
+        const [users] = await db.execute('SELECT * FROM users WHERE nrc = ? AND role = "borrower"', [nrc]);
+        const user = users.length > 0 ? users[0] : null;
+        
+        const isDeactivated = user && user.status === 'deactivated';
 
-        const nrc = borrower[0].nrc;
+        if (isDeactivated) {
+            // Reactivate
+            let newNrc = borrower.nrc;
+            let newPhone = borrower.phone;
+            let newEmail = borrower.email;
+            
+            if (newNrc && newNrc.includes('_DEACT_')) newNrc = newNrc.split('_DEACT_')[0];
+            if (newPhone && newPhone.includes('_DEACT_')) newPhone = newPhone.split('_DEACT_')[0];
+            if (newEmail && newEmail.includes('_DEACT_')) newEmail = newEmail.split('_DEACT_')[0];
 
-        // 2. Audit log before delete
-        await db.execute('INSERT INTO audit_logs (action, user_id, details) VALUES (?, ?, ?)',
-            ['DELETE_BORROWER', req.user.id, `Deleted borrower: ${borrower[0].name} (ID: ${id}, NRC: ${nrc})`]);
+            await db.execute('UPDATE borrowers SET nrc = ?, phone = ?, email = ? WHERE id = ?', [newNrc, newPhone, newEmail, id]);
+            if (user) {
+                await db.execute('UPDATE users SET status = "active", nrc = ?, phone = ?, email = ? WHERE id = ?', [newNrc, newPhone, newEmail, user.id]);
+            }
+            res.json({ message: 'Borrower reactivated successfully' });
+        } else {
+            // Deactivate
+            const suffix = '_DEACT_' + Date.now();
+            const newNrc = borrower.nrc ? borrower.nrc + suffix : null;
+            const newPhone = borrower.phone ? borrower.phone + suffix : null;
+            const newEmail = borrower.email ? borrower.email + suffix : null;
 
-        // 3. Get all loan IDs for this borrower
-        const [loans] = await db.execute('SELECT id FROM loans WHERE borrower_id = ?', [id]);
-        const loanIds = loans.map(l => l.id);
-
-        if (loanIds.length > 0) {
-            const placeholders = loanIds.map(() => '?').join(',');
-            // Delete collaterals, payments, installments, default_ledger entries for these loans
-            await db.execute(`DELETE FROM collaterals WHERE loan_id IN (${placeholders})`, loanIds);
-            await db.execute(`DELETE FROM payments WHERE loan_id IN (${placeholders})`, loanIds);
-            await db.execute(`DELETE FROM loan_installments WHERE loan_id IN (${placeholders})`, loanIds);
-            await db.execute(`DELETE FROM default_ledger WHERE loan_id IN (${placeholders})`, loanIds);
-            // Delete the loans themselves
-            await db.execute(`DELETE FROM loans WHERE borrower_id = ?`, [id]);
+            await db.execute('UPDATE borrowers SET nrc = ?, phone = ?, email = ? WHERE id = ?', [newNrc, newPhone, newEmail, id]);
+            if (user) {
+                await db.execute('UPDATE users SET status = "deactivated", nrc = ?, phone = ?, email = ? WHERE id = ?', [newNrc, newPhone, newEmail, user.id]);
+            }
+            res.json({ message: 'Borrower deactivated successfully' });
         }
-
-        // 4. Delete lender-borrower junction and applications entries
-        await db.execute('DELETE FROM loan_applications WHERE borrower_id = ?', [id]);
-        await db.execute('DELETE FROM lender_borrowers WHERE borrower_id = ?', [id]);
-
-        // 5. Delete from borrowers table
-        await db.execute('DELETE FROM borrowers WHERE id = ?', [id]);
-
-        // 6. Delete associated user record if exists
-        if (nrc) {
-            await db.execute('DELETE FROM users WHERE nrc = ? AND role = "borrower"', [nrc]);
-        }
-
-        res.json({ message: 'Borrower and all related data deleted successfully' });
     } catch (error) {
-        console.error('Delete Borrower Error:', error);
-        res.status(500).json({ message: error.message || 'Server error deleting borrower' });
+        console.error('Delete/Deactivate Borrower Error:', error);
+        res.status(500).json({ message: error.message || 'Server error' });
     }
 };
 
-// Admin - Get Single Lender Details
-// Get all loans for a specific lender (Admin view)
 exports.getLenderLoans = async (req, res) => {
     try {
         const { id } = req.params;

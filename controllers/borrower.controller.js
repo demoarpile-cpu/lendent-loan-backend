@@ -253,24 +253,30 @@ exports.enableLogin = async (req, res) => {
         
         const b = borrower[0];
 
-        // 2. Check if user already exists
-        const [existing] = await db.execute('SELECT * FROM users WHERE phone = ? OR nrc = ?', [b.phone, b.nrc]);
-        if (existing.length > 0) {
-            return res.status(400).json({ message: 'Login is already enabled for this borrower' });
-        }
-
-        // 3. Generate random password
+        // 2. Generate random password
         const plainPassword = 'LN@' + Math.floor(100000 + Math.random() * 899999);
         const hashedPassword = await bcrypt.hash(plainPassword, 10);
 
-        // 4. Generate referral code
-        const referralCode = b.name.substring(0, 3).toUpperCase() + Math.floor(1000 + Math.random() * 9000);
+        // 3. Check if user already exists
+        const [existing] = await db.execute('SELECT id FROM users WHERE phone = ? OR nrc = ?', [b.phone, b.nrc]);
+        
+        let messageText = '';
+        let messageSubject = '';
 
-        // 5. Create user record
-        await db.execute(
-            'INSERT INTO users (name, phone, email, nrc, password, role, status, verificationStatus, referral_code) VALUES (?, ?, ?, ?, ?, "borrower", "active", "verified", ?)',
-            [b.name, b.phone, b.email || null, b.nrc, hashedPassword, referralCode]
-        );
+        if (existing.length > 0) {
+            // User already exists (e.g. registered via invite link) -> Do NOT reset password
+            messageSubject = 'LendaNet Account Linkage';
+            messageText = `Your LendaNet account is active.\nPhone: ${b.phone}\nPlease use your registered password to log in to the application.`;
+        } else {
+            // 4. Generate referral code and create new user record
+            const referralCode = b.name.substring(0, 3).toUpperCase() + Math.floor(1000 + Math.random() * 9000);
+            await db.execute(
+                'INSERT INTO users (name, phone, email, nrc, password, role, status, verificationStatus, referral_code) VALUES (?, ?, ?, ?, ?, "borrower", "active", "verified", ?)',
+                [b.name, b.phone, b.email || null, b.nrc, hashedPassword, referralCode]
+            );
+            messageSubject = 'LendaNet Login Enabled';
+            messageText = `Welcome to LendaNet! Your login has been enabled.\nPhone: ${b.phone}\nPassword: ${plainPassword}\nPlease change it after login.`;
+        }
 
         // Send Credentials Notification
         const notificationService = require('../services/notification.service');
@@ -278,16 +284,16 @@ exports.enableLogin = async (req, res) => {
         await notificationService.sendMultiChannel({
             phone: b.phone,
             email: b.email,
-            smsBody: `Welcome to LendaNet! Your login has been enabled. Phone: ${b.phone}, Password: ${plainPassword}. Please change it after login.`,
-            emailSubject: 'LendaNet Login Enabled',
-            emailText: `Welcome to LendaNet! Your login has been enabled.\nPhone: ${b.phone}\nPassword: ${plainPassword}\nPlease change it after login.`
+            smsBody: messageText,
+            emailSubject: messageSubject,
+            emailText: messageText
         });
 
         res.json({
-            message: 'Login enabled successfully and credentials sent.',
+            message: 'Credentials sent successfully.',
             credentials: {
                 phone: b.phone,
-                password: plainPassword
+                password: existing.length > 0 ? 'Use registered password' : plainPassword
             }
         });
     } catch (error) {
