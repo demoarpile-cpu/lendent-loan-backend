@@ -99,6 +99,7 @@ exports.getAdminStats = async (req, res) => {
 
         res.json({
             totalPortfolio: portfolio[0].totalPortfolio || 0,
+            defaultedAmount: portfolio[0].defaultedAmount || 0,
             ...lenders[0],
             recoveryRate: parseFloat(recoveryRate),
             paidLoans,
