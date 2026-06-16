@@ -14,14 +14,16 @@ exports.getLenderStats = async (req, res) => {
             WHERE lender_id = ?
         `, [lenderId]);
 
-        // Outstanding Portfolio (Includes Interest)
+        // Total Portfolio (Principal of active/defaulted loans)
         const [portfolio] = await db.execute(`
-            SELECT COALESCE(SUM(li.amount), 0) as totalPortfolio
-            FROM loan_installments li
-            JOIN loans l ON li.loan_id = l.id
-            WHERE l.lender_id = ? AND l.status IN ('active', 'default', 'locked') AND li.status IN ('pending', 'missed')
+            SELECT 
+            COALESCE(SUM(amount + (amount * interest_rate / 100)), 0) as totalPortfolio,
+            COALESCE(SUM(CASE WHEN status = 'default' THEN amount + (amount * interest_rate / 100) ELSE 0 END), 0) as defaultedAmount
+         FROM loans
+         WHERE lender_id = ? AND status IN ('active', 'default', 'locked')
         `, [lenderId]);
         counts[0].totalPortfolio = portfolio[0].totalPortfolio;
+         counts[0].defaultedAmount = portfolio[0].defaultedAmount;
 
         // Recent Activity
         const [recent] = await db.execute(`
@@ -49,15 +51,18 @@ exports.getLenderStats = async (req, res) => {
 
 exports.getAdminStats = async (req, res) => {
     try {
-        // Total Portfolio (Sum of all pending/missed installments which include interest)
+        // Total Portfolio (Sum of principal amount of active/defaulted loans)
         const [portfolio] = await db.execute(`
-            SELECT COALESCE(SUM(li.amount), 0) as totalPortfolio 
-            FROM loan_installments li
-            JOIN loans l ON li.loan_id = l.id
-            WHERE l.status IN ('active', 'default', 'locked') AND li.status IN ('pending', 'missed')
+            SELECT 
+            COALESCE(SUM(amount + (amount * interest_rate / 100)), 0) as totalPortfolio,
+            COALESCE(SUM(CASE WHEN status = 'default' THEN amount + (amount * interest_rate / 100) ELSE 0 END), 0) as defaultedAmount
+         FROM loans
+         WHERE status IN ('active', 'default', 'locked')
         `);
         
         // Lender counts
+        const defaultedAmount = portfolio[0].defaultedAmount;
+        
         const [lenders] = await db.execute(`
             SELECT 
                 COUNT(*) as totalLenders,

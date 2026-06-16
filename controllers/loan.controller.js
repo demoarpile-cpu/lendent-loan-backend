@@ -396,14 +396,33 @@ exports.getLoans = async (req, res) => {
         // Auto-check defaults before returning loans
         await autoMarkDefaults(lenderId);
 
-        const [loans] = await db.execute(
-            `SELECT l.*, b.name as borrowerName, b.nrc as borrowerNRC, b.phone as borrowerPhoneFallback, u.phone as borrowerPhone, u.email as borrowerEmail
+        const filterStatus = req.query.status;
+        
+        let query = `
+            SELECT l.*, b.name as borrowerName, b.nrc as borrowerNRC, b.phone as borrowerPhoneFallback, u.phone as borrowerPhone, u.email as borrowerEmail
              FROM loans l
              JOIN borrowers b ON l.borrower_id = b.id
              LEFT JOIN users u ON u.nrc = b.nrc AND u.role = 'borrower'
-             WHERE l.lender_id = ?`,
-            [lenderId]
-        );
+             WHERE l.lender_id = ?
+        `;
+        const params = [lenderId];
+
+        if (filterStatus) {
+            if (filterStatus.toLowerCase() === 'paid') {
+                query += ` AND l.status = 'paid'`;
+            } else if (filterStatus.toLowerCase() === 'unpaid') {
+                query += ` AND l.status = 'active'`;
+            } else if (filterStatus.toLowerCase() === 'defaulted') {
+                query += ` AND l.status = 'default'`;
+            } else if (filterStatus.toLowerCase() === 'late') {
+                query += ` AND l.status = 'active' AND EXISTS (
+                    SELECT 1 FROM loan_installments li 
+                    WHERE li.loan_id = l.id AND li.status IN ('pending', 'missed') AND li.due_date < CURRENT_DATE
+                )`;
+            }
+        }
+
+        const [loans] = await db.execute(query, params);
 
         // Fetch installments for each loan
         for (let loan of loans) {

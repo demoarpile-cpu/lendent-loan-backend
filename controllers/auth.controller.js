@@ -84,7 +84,7 @@ exports.register = async (req, res) => {
 
         // 4. Check for existing user (Phone or Email or NRC or Company Reg)
         const [existing] = await db.execute(
-            'SELECT * FROM users WHERE phone = ? OR (email IS NOT NULL AND email = ?) OR (nrc IS NOT NULL AND nrc = ?) OR (company_registration_number IS NOT NULL AND company_registration_number = ?)',
+            'SELECT * FROM users WHERE (phone = ? OR (email IS NOT NULL AND email = ?) OR (nrc IS NOT NULL AND nrc = ?) OR (company_registration_number IS NOT NULL AND company_registration_number = ?)) AND status != "deactivated"',
             [phone, email || '---', nrc || '---', companyRegistrationNumber || '---']
         );
         if (existing.length > 0) {
@@ -140,10 +140,18 @@ exports.register = async (req, res) => {
 
         // Handle referral link if provided
         if (referralCode && newUserId) {
-            const [referrer] = await db.execute('SELECT id FROM users WHERE referral_code = ?', [referralCode]);
+            const [referrer] = await db.execute('SELECT id, role FROM users WHERE referral_code = ?', [referralCode]);
             if (referrer && referrer.length > 0) {
+                const referrerId = referrer[0].id;
                 await db.execute('INSERT INTO referrals (referrer_id, referred_user_id, status) VALUES (?, ?, ?)', 
-                    [referrer[0].id || null, newUserId, 'pending']);
+                    [referrerId, newUserId, 'pending']);
+                
+                if (role === 'borrower') {
+                    const [bRecord] = await db.execute('SELECT id FROM borrowers WHERE nrc = ? OR phone = ? LIMIT 1', [nrc || '---', phone || '---']);
+                    if (bRecord.length > 0) {
+                        await db.execute('INSERT IGNORE INTO lender_borrowers (lender_id, borrower_id) VALUES (?, ?)', [referrerId, bRecord[0].id]);
+                    }
+                }
             }
         }
 

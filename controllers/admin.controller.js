@@ -123,7 +123,8 @@ exports.getAllBorrowers = async (req, res) => {
 
 exports.getAllLoans = async (req, res) => {
     try {
-        const [loans] = await db.execute(`
+        const filterStatus = req.query.status;
+        let query = `
             SELECT l.*, b.name as borrowerName, b.nrc as borrowerNrc, 
             u.name as lenderName, u.business_name as lenderBusiness, u.phone as lenderPhone,
             u2.name as createdByName
@@ -131,8 +132,27 @@ exports.getAllLoans = async (req, res) => {
             JOIN borrowers b ON l.borrower_id = b.id
             JOIN users u ON l.lender_id = u.id
             LEFT JOIN users u2 ON l.created_by = u2.id
-            ORDER BY l.created_at DESC
-        `);
+            WHERE 1=1
+        `;
+
+        if (filterStatus) {
+            if (filterStatus.toLowerCase() === 'paid') {
+                query += ` AND l.status = 'paid'`;
+            } else if (filterStatus.toLowerCase() === 'unpaid') {
+                query += ` AND l.status = 'active'`;
+            } else if (filterStatus.toLowerCase() === 'defaulted') {
+                query += ` AND l.status = 'default'`;
+            } else if (filterStatus.toLowerCase() === 'late') {
+                query += ` AND l.status = 'active' AND EXISTS (
+                    SELECT 1 FROM loan_installments li 
+                    WHERE li.loan_id = l.id AND li.status IN ('pending', 'missed') AND li.due_date < CURRENT_DATE
+                )`;
+            }
+        }
+
+        query += ` ORDER BY l.created_at DESC`;
+
+        const [loans] = await db.execute(query);
 
         // Fetch installments for each loan
         for (let loan of loans) {
