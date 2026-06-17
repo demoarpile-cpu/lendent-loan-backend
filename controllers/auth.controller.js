@@ -84,15 +84,32 @@ exports.register = async (req, res) => {
 
         // 4. Check for existing user (Phone or Email or NRC or Company Reg)
         const [existing] = await db.execute(
-            'SELECT * FROM users WHERE (phone = ? OR (email IS NOT NULL AND email = ?) OR (nrc IS NOT NULL AND nrc = ?) OR (company_registration_number IS NOT NULL AND company_registration_number = ?)) AND status != "deactivated"',
+            'SELECT * FROM users WHERE (phone = ? OR (email IS NOT NULL AND email = ?) OR (nrc IS NOT NULL AND nrc = ?) OR (company_registration_number IS NOT NULL AND company_registration_number = ?))',
             [phone, email || '---', nrc || '---', companyRegistrationNumber || '---']
         );
+        
         if (existing.length > 0) {
-            if (existing[0].phone === phone) return res.status(400).json({ message: 'Phone number already registered' });
-            if (existing[0].email === email) return res.status(400).json({ message: 'Email already registered' });
-            if (existing[0].nrc === nrc)   return res.status(400).json({ message: 'NRC already registered' });
-            if (existing[0].company_registration_number === companyRegistrationNumber) {
-                return res.status(400).json({ message: 'Company Registration Number already registered' });
+            // First check if the matched NRC belongs to a deactivated account
+            if (nrc) {
+                const deactivatedMatch = existing.find(u => u.nrc === nrc && u.status === 'deactivated');
+                if (deactivatedMatch) {
+                    return res.status(409).json({ 
+                        message: 'This NRC is linked to a deactivated account. Would you like to request reactivation?',
+                        isDeactivatedNrc: true,
+                        userId: deactivatedMatch.id
+                    });
+                }
+            }
+
+            // For active/pending accounts or other field matches
+            const activeExisting = existing.filter(u => u.status !== 'deactivated');
+            if (activeExisting.length > 0) {
+                if (activeExisting.find(u => u.phone === phone)) return res.status(400).json({ message: 'Phone number already registered' });
+                if (activeExisting.find(u => u.email === email)) return res.status(400).json({ message: 'Email already registered' });
+                if (activeExisting.find(u => u.nrc === nrc))   return res.status(400).json({ message: 'NRC already registered' });
+                if (activeExisting.find(u => u.company_registration_number === companyRegistrationNumber)) {
+                    return res.status(400).json({ message: 'Company Registration Number already registered' });
+                }
             }
         }
 
@@ -686,3 +703,43 @@ exports.resetPassword = async (req, res) => {
         res.status(500).json({ message: 'Server error resetting password' });
     }
 };
+
+// Request Reactivation
+exports.requestReactivation = async (req, res) => {
+    try {
+        const { userId } = req.body;
+        if (!userId) {
+            return res.status(400).json({ message: 'User ID is required' });
+        }
+
+        const [users] = await db.execute('SELECT * FROM users WHERE id = ? AND status = "deactivated"', [userId]);
+        if (users.length === 0) {
+            return res.status(404).json({ message: 'Deactivated account not found' });
+        }
+
+        const user = users[0];
+
+        // Notify Admin of reactivation request
+        const [admins] = await db.execute('SELECT phone, email, one_signal_player_id FROM users WHERE role = "admin" AND status = "active"');
+        for (const admin of admins) {
+            sendMultiChannel({
+                phone: admin.phone,
+                email: admin.email,
+                oneSignalPlayerId: admin.one_signal_player_id,
+                smsBody: `LendaNet Alert: User ${user.name} (NRC: ${user.nrc}) has requested account reactivation.`,
+                emailSubject: 'Account Reactivation Request',
+                emailText: `A deactivated user named ${user.name} (NRC: ${user.nrc}) has requested to reactivate their account.\n\nPlease review their details in the admin panel and manually reactivate the account if approved.`,
+                pushTitle: 'Reactivation Request',
+                pushBody: `User ${user.name} requested account reactivation.`
+            }).catch(adminNotifError => {
+                console.error('[Auth] Failed to notify admin of reactivation request:', adminNotifError);
+            });
+        }
+
+        res.json({ message: 'A member of the team will contact you regarding your reactivation request.' });
+    } catch (error) {
+        console.error('Request Reactivation Error:', error);
+        res.status(500).json({ message: 'Server error processing reactivation request' });
+    }
+};
+

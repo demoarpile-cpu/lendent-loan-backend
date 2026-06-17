@@ -371,7 +371,7 @@ exports.deleteLender = async (req, res) => {
         } else {
             // Deactivate
             const suffix = '_DEACT_' + Date.now();
-            const newNrc = lender.nrc ? lender.nrc + suffix : null;
+            const newNrc = lender.nrc; // DO NOT append suffix to keep NRC locked
             const newPhone = lender.phone ? lender.phone + suffix : null;
             const newEmail = lender.email ? lender.email + suffix : null;
 
@@ -420,7 +420,7 @@ exports.deleteBorrower = async (req, res) => {
         } else {
             // Deactivate
             const suffix = '_DEACT_' + Date.now();
-            const newNrc = borrower.nrc ? borrower.nrc + suffix : null;
+            const newNrc = borrower.nrc; // DO NOT append suffix to keep NRC locked
             const newPhone = borrower.phone ? borrower.phone + suffix : null;
             const newEmail = borrower.email ? borrower.email + suffix : null;
 
