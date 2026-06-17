@@ -45,33 +45,37 @@ exports.addBorrower = async (req, res) => {
         );
         const borrowerId = result.insertId;
 
-        // 3. Create User Account if password is provided
-        if (password) {
-            const hashedPassword = await bcrypt.hash(password, 10);
-            const referralCode = name.substring(0, 3).toUpperCase() + Math.floor(1000 + Math.random() * 9000);
+        // 3. Create User Account if password is provided or auto-generate one
+        let finalPassword = password;
+        if (!finalPassword) {
+            // Auto-generate a strong random 8-character password
+            finalPassword = Math.random().toString(36).slice(-8) + Math.floor(Math.random() * 10);
+        }
+        
+        const hashedPassword = await bcrypt.hash(finalPassword, 10);
+        const referralCode = name.substring(0, 3).toUpperCase() + Math.floor(1000 + Math.random() * 9000);
 
-            // Check if user already exists (by phone, email or NRC)
-            const [existingU] = await db.execute(
-                'SELECT * FROM users WHERE phone = ? OR (email IS NOT NULL AND email = ?) OR nrc = ?',
-                [phone, email || '---', nrc]
+        // Check if user already exists (by phone, email or NRC)
+        const [existingU] = await db.execute(
+            'SELECT * FROM users WHERE phone = ? OR (email IS NOT NULL AND email = ?) OR nrc = ?',
+            [phone, email || '---', nrc]
+        );
+
+        if (existingU.length === 0) {
+            await db.execute(
+                'INSERT INTO users (name, phone, email, nrc, password, role, status, verificationStatus, referral_code, profile_image_url, license_url) VALUES (?, ?, ?, ?, ?, "borrower", "active", "verified", ?, ?, ?)',
+                [name, phone, email || null, nrc, hashedPassword, referralCode, photoUrl, nrcUrl]
             );
 
-            if (existingU.length === 0) {
-                await db.execute(
-                    'INSERT INTO users (name, phone, email, nrc, password, role, status, verificationStatus, referral_code, profile_image_url, license_url) VALUES (?, ?, ?, ?, ?, "borrower", "active", "verified", ?, ?, ?)',
-                    [name, phone, email || null, nrc, hashedPassword, referralCode, photoUrl, nrcUrl]
-                );
-
-                // Send Welcome/Credentials Notification
-                const notificationService = require('../services/notification.service');
-                await notificationService.sendMultiChannel({
-                    phone,
-                    email: email || null,
-                    smsBody: `Welcome to LendaNet! A borrower account has been created for you. Phone: ${phone}, Password: ${password}. You can now log in.`,
-                    emailSubject: 'LendaNet Account Created',
-                    emailText: `Welcome to LendaNet!\n\nYour borrower account has been created.\nPhone: ${phone}\nPassword: ${password}\n\nYou can now log in to your account.`
-                });
-            }
+            // Send Welcome/Credentials Notification
+            const notificationService = require('../services/notification.service');
+            await notificationService.sendMultiChannel({
+                phone,
+                email: email || null,
+                smsBody: `Welcome to LendaNet! A borrower account has been created for you. Phone: ${phone}, Password: ${finalPassword}. Please log in and update your password immediately for security purposes.`,
+                emailSubject: 'LendaNet Account Created',
+                emailText: `Welcome to LendaNet!\n\nYour borrower account has been created.\nPhone: ${phone}\nPassword: ${finalPassword}\n\nPlease log in to your account and update your password immediately after your first login for security purposes.`
+            });
         }
 
 
@@ -288,7 +292,7 @@ exports.enableLogin = async (req, res) => {
                 [b.name, b.phone, b.email || null, b.nrc, hashedPassword, referralCode]
             );
             messageSubject = 'LendaNet Login Enabled';
-            messageText = `Welcome to LendaNet! Your login has been enabled.\nPhone: ${b.phone}\nPassword: ${plainPassword}\nPlease change it after login.`;
+            messageText = `Welcome to LendaNet! Your login has been enabled.\nPhone: ${b.phone}\nPassword: ${plainPassword}\n\nPlease log in to your account and update your password immediately after your first login for security purposes.`;
         }
 
         // Send Credentials Notification
