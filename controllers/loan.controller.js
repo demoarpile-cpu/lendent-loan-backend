@@ -42,15 +42,26 @@ exports.createLoan = async (req, res) => {
 
         // 2. Generate Installments (Simple Monthly Breakdown)
         const totalAmount = parseFloat(finalAmount) + (parseFloat(finalAmount) * (parseFloat(finalInterestRate) / 100));
-        const installmentAmount = totalAmount / finalInstallmentsCount;
+        // Round down to 2 decimal places to avoid overshooting
+        const baseInstallmentAmount = Math.floor((totalAmount / finalInstallmentsCount) * 100) / 100;
+        
+        let remainingAmount = totalAmount;
 
         for (let i = 1; i <= finalInstallmentsCount; i++) {
             const installmentDueDate = new Date(finalIssueDate);
             installmentDueDate.setMonth(installmentDueDate.getMonth() + i);
 
+            // The last installment takes whatever is left to ensure exact total
+            const isLast = i === finalInstallmentsCount;
+            let currentInstallmentAmount = isLast ? remainingAmount : baseInstallmentAmount;
+            
+            // Round to 2 decimals safely
+            currentInstallmentAmount = Math.round(currentInstallmentAmount * 100) / 100;
+            remainingAmount -= currentInstallmentAmount;
+
             await db.execute(
                 'INSERT INTO loan_installments (loan_id, due_date, amount) VALUES (?, ?, ?)',
-                [loanId, installmentDueDate, installmentAmount]
+                [loanId, installmentDueDate, currentInstallmentAmount]
             );
         }
 
