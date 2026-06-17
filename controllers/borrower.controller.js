@@ -16,8 +16,21 @@ exports.addBorrower = async (req, res) => {
         }
         const lenderId = req.user.id;
 
-        // 1. Check if borrower exists by NRC in borrowers table
-        let [existingB] = await db.execute('SELECT id, name, nrc, verificationStatus FROM borrowers WHERE nrc = ? AND verificationStatus != "deactivated"', [nrc]);
+        // 1. Check if borrower exists by NRC in users table first (to handle deactivated accounts system-wide)
+        let [existingU_check] = await db.execute('SELECT id, name, status FROM users WHERE nrc = ?', [nrc]);
+        if (existingU_check.length > 0) {
+            const userStatus = existingU_check[0].status;
+            if (userStatus === 'deactivated') {
+                return res.status(409).json({ 
+                    message: 'Account Deactivated',
+                    isDeactivatedNrc: true,
+                    existingBorrower: existingU_check[0]
+                });
+            }
+        }
+
+        // 1b. Check if borrower exists in borrowers table
+        let [existingB] = await db.execute('SELECT id, name, nrc, verificationStatus FROM borrowers WHERE nrc = ?', [nrc]);
         if (existingB.length > 0) {
             return res.status(409).json({ 
                 message: `NRC ${nrc} is already registered on the network.`,
