@@ -14,16 +14,17 @@ exports.getLenderStats = async (req, res) => {
             WHERE lender_id = ?
         `, [lenderId]);
 
-        // Total Portfolio (Principal of active/defaulted loans)
+        // Total Portfolio (Outstanding balance = sum of pending/missed installments)
         const [portfolio] = await db.execute(`
             SELECT 
-            COALESCE(SUM(amount + (amount * interest_rate / 100)), 0) as totalPortfolio,
-            COALESCE(SUM(CASE WHEN status = 'default' THEN amount + (amount * interest_rate / 100) ELSE 0 END), 0) as defaultedAmount
-         FROM loans
-         WHERE lender_id = ? AND status IN ('active', 'default', 'locked')
+                COALESCE(SUM(CASE WHEN l.status IN ('active', 'default', 'locked') AND li.status IN ('pending', 'missed') THEN li.amount ELSE 0 END), 0) as totalPortfolio,
+                COALESCE(SUM(CASE WHEN l.status = 'default' AND li.status IN ('pending', 'missed') THEN li.amount ELSE 0 END), 0) as defaultedAmount
+            FROM loans l
+            LEFT JOIN loan_installments li ON l.id = li.loan_id
+            WHERE l.lender_id = ?
         `, [lenderId]);
         counts[0].totalPortfolio = portfolio[0].totalPortfolio;
-         counts[0].defaultedAmount = portfolio[0].defaultedAmount;
+        counts[0].defaultedAmount = portfolio[0].defaultedAmount;
 
         // Recent Activity
         const [recent] = await db.execute(`
@@ -51,13 +52,13 @@ exports.getLenderStats = async (req, res) => {
 
 exports.getAdminStats = async (req, res) => {
     try {
-        // Total Portfolio (Sum of principal amount of active/defaulted loans)
+        // Total Portfolio (Outstanding balance = sum of pending/missed installments)
         const [portfolio] = await db.execute(`
             SELECT 
-            COALESCE(SUM(amount + (amount * interest_rate / 100)), 0) as totalPortfolio,
-            COALESCE(SUM(CASE WHEN status = 'default' THEN amount + (amount * interest_rate / 100) ELSE 0 END), 0) as defaultedAmount
-         FROM loans
-         WHERE status IN ('active', 'default', 'locked')
+                COALESCE(SUM(CASE WHEN l.status IN ('active', 'default', 'locked') AND li.status IN ('pending', 'missed') THEN li.amount ELSE 0 END), 0) as totalPortfolio,
+                COALESCE(SUM(CASE WHEN l.status = 'default' AND li.status IN ('pending', 'missed') THEN li.amount ELSE 0 END), 0) as defaultedAmount
+            FROM loans l
+            LEFT JOIN loan_installments li ON l.id = li.loan_id
         `);
         
         // Lender counts
