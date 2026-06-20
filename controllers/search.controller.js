@@ -14,19 +14,25 @@ exports.searchBorrower = async (req, res) => {
 
         console.log('Search query:', q, '| Digits:', digitsOnly, '| Last9:', last9);
 
-        // 1. Search in borrowers table by NRC or phone (last 9 digits match)
-        let borrowerQuery = 'SELECT * FROM borrowers WHERE nrc LIKE ? OR phone LIKE ?';
+        // 1. Search in borrowers table, excluding those who are deactivated in the users table or have _DEACT_ in NRC
+        let borrowerQuery = `
+            SELECT b.* FROM borrowers b
+            LEFT JOIN users u ON b.nrc = u.nrc
+            WHERE (u.status IS NULL OR u.status != 'deactivated')
+            AND (b.nrc IS NULL OR b.nrc NOT LIKE '%_DEACT_%')
+            AND (b.nrc LIKE ? OR b.phone LIKE ?`;
         let borrowerParams = [originalPattern, originalPattern];
         if (last9.length >= 6) {
-            borrowerQuery += ' OR RIGHT(REPLACE(REPLACE(REPLACE(phone, " ", ""), "-", ""), "+", ""), 9) = ?';
+            borrowerQuery += ' OR RIGHT(REPLACE(REPLACE(REPLACE(b.phone, " ", ""), "-", ""), "+", ""), 9) = ?';
             borrowerParams.push(last9);
         }
+        borrowerQuery += ')';
         const [borrowers] = await db.query(borrowerQuery, borrowerParams);
         console.log('Borrower results:', borrowers.length);
 
-        // 2. Search in users table for lenders
+        // 2. Search in users table for lenders (exclude deactivated)
         let lenderQuery = `SELECT id, name, phone, email, nrc, business_name, lender_type, lender_id, plan_type, role
-             FROM users WHERE role = 'lender' AND (nrc LIKE ? OR phone LIKE ? OR business_name LIKE ? OR lender_id LIKE ?`;
+             FROM users WHERE role = 'lender' AND status != 'deactivated' AND (nrc LIKE ? OR phone LIKE ? OR business_name LIKE ? OR lender_id LIKE ?`;
         let lenderParams = [originalPattern, originalPattern, originalPattern, originalPattern];
         if (last9.length >= 6) {
             lenderQuery += ' OR RIGHT(REPLACE(REPLACE(REPLACE(phone, " ", ""), "-", ""), "+", ""), 9) = ?';
@@ -111,7 +117,7 @@ exports.searchBorrower = async (req, res) => {
                 'SELECT COUNT(*) as count FROM default_ledger WHERE nrc = ?',
                 [borrower.nrc]
             );
-            const totalDefaultRecords = (stats[0].defaultCount || 0) + (centralDefaults[0].count || 0);
+            const totalDefaultRecords = centralDefaults[0].count || 0;
 
             response.risk_status = (totalDefaultRecords > 0 || lateRows[0].lateCount > 0) ? 'RED' : (stats[0].activeLoans > 0 ? 'AMBER' : 'GREEN');
             response.activeLoans = stats[0].activeLoans;

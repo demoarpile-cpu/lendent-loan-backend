@@ -101,7 +101,7 @@ exports.getAllBorrowers = async (req, res) => {
             LEFT JOIN users u ON b.nrc = u.nrc AND u.role = 'borrower'
         `);
 
-        // 3. Map risk level
+        // 3. Map risk level and status
         const formatted = borrowers.map(b => {
             const totalLoans = Number(b.totalLoans) || 0;
             const defaultCount = Number(b.defaultCount) || 0;
@@ -112,7 +112,12 @@ exports.getAllBorrowers = async (req, res) => {
             if (defaultCount > 0 || centralDefaults > 0 || missedCount > 0) risk = 'RED';
             else if (totalLoans > 3) risk = 'AMBER';
 
-            return { ...b, totalLoans, defaultCount: defaultCount + centralDefaults, missedCount, risk };
+            let userStatus = b.userStatus;
+            if (!userStatus) {
+                userStatus = (b.nrc && b.nrc.includes('_DEACT_')) ? 'deactivated' : 'active';
+            }
+
+            return { ...b, userStatus, totalLoans, defaultCount: defaultCount + centralDefaults, missedCount, risk };
         });
 
         res.json(formatted);
@@ -172,7 +177,7 @@ exports.getAllLoans = async (req, res) => {
 exports.getDefaults = async (req, res) => {
     try {
         const [defaults] = await db.execute(`
-            SELECT d.*, b.name as borrowerName, u.name as lenderName, l.amount as loanAmount, l.interest_rate as interestRate
+            SELECT d.*, b.name as borrowerName, u.name as lenderName, l.amount as loanAmount, l.interest_rate as interestRate, l.due_date as dueDate
             FROM default_ledger d
             JOIN loans l ON d.loan_id = l.id
             JOIN borrowers b ON l.borrower_id = b.id
@@ -580,83 +585,6 @@ exports.deleteLender = async (req, res) => {
     }
 };
 
-// Admin - Delete Borrower (Manually delete all related data to avoid FK issues on any DB)
-exports.deleteBorrower = async (req, res) => {
-    try {
-        const { id } = req.params;
-
-        // 1. Get borrower info
-        const [borrower] = await db.execute('SELECT * FROM borrowers WHERE id = ?', [id]);
-        if (borrower.length === 0) return res.status(404).json({ message: 'Borrower not found' });
-
-        const nrc = borrower[0].nrc;
-
-        // 2. Audit log before delete
-        await db.execute('INSERT INTO audit_logs (action, user_id, details) VALUES (?, ?, ?)',
-            ['DELETE_BORROWER', req.user.id, `Deleted borrower: ${borrower[0].name} (ID: ${id}, NRC: ${nrc})`]);
-
-        // 3. Get all loan IDs for this borrower
-        const [loans] = await db.execute('SELECT id FROM loans WHERE borrower_id = ?', [id]);
-        const loanIds = loans.map(l => l.id);
-
-        if (loanIds.length > 0) {
-            const placeholders = loanIds.map(() => '?').join(',');
-            // Delete collaterals, payments, installments, default_ledger entries for these loans
-            await db.execute(`DELETE FROM collaterals WHERE loan_id IN (${placeholders})`, loanIds);
-            await db.execute(`DELETE FROM payments WHERE loan_id IN (${placeholders})`, loanIds);
-            await db.execute(`DELETE FROM loan_installments WHERE loan_id IN (${placeholders})`, loanIds);
-            await db.execute(`DELETE FROM default_ledger WHERE loan_id IN (${placeholders})`, loanIds);
-            // Delete the loans themselves
-            await db.execute(`DELETE FROM loans WHERE borrower_id = ?`, [id]);
-        }
-
-        // 4. Delete lender-borrower junction and applications entries
-        await db.execute('DELETE FROM loan_applications WHERE borrower_id = ?', [id]);
-        await db.execute('DELETE FROM lender_borrowers WHERE borrower_id = ?', [id]);
-
-        // 5. Delete from borrowers table
-        await db.execute('DELETE FROM borrowers WHERE id = ?', [id]);
-
-        // 6. Delete associated user record if exists
-        if (nrc) {
-            await db.execute('DELETE FROM users WHERE nrc = ? AND role = "borrower"', [nrc]);
-        }
-
-        res.json({ message: 'Borrower and all related data deleted successfully' });
-    } catch (error) {
-        console.error('Delete Borrower Error:', error);
-        res.status(500).json({ message: error.message || 'Server error deleting borrower' });
-    }
-};
-
-// Admin - Get Single Lender Details
-// Get all loans for a specific lender (Admin view)
-exports.getLenderLoans = async (req, res) => {
-    try {
-        const { id } = req.params;
-        const [loans] = await db.execute(
-            `SELECT l.*, b.name as borrowerName, b.nrc as borrowerNRC
-             FROM loans l
-             JOIN borrowers b ON l.borrower_id = b.id
-             WHERE l.lender_id = ?
-             ORDER BY l.created_at DESC`,
-            [id]
-        );
-
-        for (let loan of loans) {
-            const [installments] = await db.execute(
-                'SELECT * FROM loan_installments WHERE loan_id = ? ORDER BY due_date ASC',
-                [loan.id]
-            );
-            loan.instalmentSchedule = installments;
-        }
-
-        res.json(loans);
-    } catch (error) {
-        res.status(500).json({ message: error.message });
-    }
-};
-
 // Admin - Create Loan for a Lender
 exports.createLoan = async (req, res) => {
     try {
@@ -676,6 +604,12 @@ exports.createLoan = async (req, res) => {
             const d = new Date(finalIssueDate);
             d.setMonth(d.getMonth() + finalInstallmentsCount);
             finalDueDate = d.toISOString().split('T')[0];
+        }
+
+        // 0. Check if borrower is deactivated
+        const [borrowers] = await db.execute('SELECT nrc FROM borrowers WHERE id = ?', [borrowerId]);
+        if (borrowers.length > 0 && borrowers[0].nrc && borrowers[0].nrc.includes('_DEACT_')) {
+            return res.status(403).json({ message: 'Cannot issue loan: This borrower account has been deactivated by the admin.' });
         }
 
         // 1. Insert Loan

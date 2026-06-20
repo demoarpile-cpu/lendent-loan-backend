@@ -33,6 +33,12 @@ exports.createLoan = async (req, res) => {
         const finalDueDate = dueDate || due_date;
         const finalInstallmentsCount = installmentsCount || installments || 3;
 
+        // 0. Check if borrower is deactivated
+        const [borrowers] = await db.execute('SELECT nrc FROM borrowers WHERE id = ?', [finalBorrowerId]);
+        if (borrowers.length > 0 && borrowers[0].nrc && borrowers[0].nrc.includes('_DEACT_')) {
+            return res.status(403).json({ message: 'Cannot issue loan: This borrower account has been deactivated by the admin.' });
+        }
+
         // 1. Insert Loan
         const [loanResult] = await db.execute(
             'INSERT INTO loans (lender_id, borrower_id, amount, interest_rate, issue_date, due_date, type, guarantor_name, guarantor_phone, guarantor_nrc, created_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
@@ -466,8 +472,11 @@ exports.getLenderDefaults = async (req, res) => {
                 u.name as lenderName,
                 'active' as status
              FROM default_ledger d 
-             JOIN borrowers b ON d.nrc = b.nrc 
-             JOIN users u ON d.lender_id = u.id`
+             JOIN loans l ON d.loan_id = l.id
+             JOIN borrowers b ON l.borrower_id = b.id
+             JOIN users u ON d.lender_id = u.id
+             WHERE d.lender_id = ?`,
+            [lenderId]
         );
         res.json(defaults);
     } catch (error) {
@@ -485,14 +494,31 @@ exports.getMyLoans = async (req, res) => {
         
         if (borrowerRecord.length === 0) return res.json([]);
 
-        const [loans] = await db.execute(
-            `SELECT l.*, u.name as lenderName, u.phone as lenderPhone, u.email as lenderEmail, u.business_name as lenderBusiness,
+        const filterStatus = req.query.status;
+        let query = `
+            SELECT l.*, u.name as lenderName, u.phone as lenderPhone, u.email as lenderEmail, u.business_name as lenderBusiness,
                     u.airtel_money_number, u.mtn_money_number, u.zamtel_money_number, u.bank_name, u.bank_account_number, u.bank_account_name
              FROM loans l
              JOIN users u ON l.lender_id = u.id
-             WHERE l.borrower_id = ?`,
-            [borrowerRecord[0].id]
-        );
+             WHERE l.borrower_id = ?
+        `;
+
+        if (filterStatus) {
+            if (filterStatus.toLowerCase() === 'paid') {
+                query += ` AND l.status = 'paid'`;
+            } else if (filterStatus.toLowerCase() === 'unpaid') {
+                query += ` AND l.status = 'active'`;
+            } else if (filterStatus.toLowerCase() === 'defaulted') {
+                query += ` AND l.status = 'default'`;
+            } else if (filterStatus.toLowerCase() === 'late') {
+                query += ` AND l.status = 'active' AND EXISTS (
+                    SELECT 1 FROM loan_installments li 
+                    WHERE li.loan_id = l.id AND li.status IN ('pending', 'missed') AND li.due_date < CURRENT_DATE
+                )`;
+            }
+        }
+
+        const [loans] = await db.execute(query, [borrowerRecord[0].id]);
 
         // Fetch installments for each loan
         for (let loan of loans) {

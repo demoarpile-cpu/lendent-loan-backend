@@ -48,8 +48,8 @@ exports.addBorrower = async (req, res) => {
         // 3. Create User Account if password is provided or auto-generate one
         let finalPassword = password;
         if (!finalPassword) {
-            // Auto-generate a strong random 8-character password
-            finalPassword = Math.random().toString(36).slice(-8) + Math.floor(Math.random() * 10);
+            // Auto-generate a strong random password that meets criteria (Uppercase, Lowercase, Special, Min 8 chars)
+            finalPassword = 'Ln@' + Math.floor(100000 + Math.random() * 899999);
         }
         
         const hashedPassword = await bcrypt.hash(finalPassword, 10);
@@ -69,12 +69,14 @@ exports.addBorrower = async (req, res) => {
 
             // Send Welcome/Credentials Notification
             const notificationService = require('../services/notification.service');
+            const welcomeMsg = `Your Lendanet account has been successfully registered using the following details:\nUsername: ${phone}\nTemporary Password: ${finalPassword}\n\nPlease use the following link (https://lendanet.com/login) and click forgot password to create a new password as soon as possible for security reasons.`;
+            
             await notificationService.sendMultiChannel({
                 phone,
                 email: email || null,
-                smsBody: `Welcome to LendaNet! A borrower account has been created for you. Phone: ${phone}, Password: ${finalPassword}. Please log in and update your password immediately for security purposes.`,
+                smsBody: welcomeMsg,
                 emailSubject: 'LendaNet Account Created',
-                emailText: `Welcome to LendaNet!\n\nYour borrower account has been created.\nPhone: ${phone}\nPassword: ${finalPassword}\n\nPlease log in to your account and update your password immediately after your first login for security purposes.`
+                emailText: welcomeMsg
             });
         }
 
@@ -140,7 +142,7 @@ exports.getLenderBorrowers = async (req, res) => {
         const [settings] = await db.execute('SELECT setting_value FROM system_settings WHERE setting_key = "default_threshold"');
         const threshold = settings.length > 0 ? parseInt(settings[0].setting_value) : 3;
 
-        // 2. Query with aggregates
+        // 2. Query with aggregates, excluding deactivated borrowers
         const [borrowers] = await db.execute(
             `SELECT b.*,
              (SELECT COUNT(*) FROM loans WHERE borrower_id = b.id) as totalLoans,
@@ -149,7 +151,9 @@ exports.getLenderBorrowers = async (req, res) => {
              (SELECT COUNT(*) FROM loan_installments li JOIN loans l ON li.loan_id = l.id WHERE l.borrower_id = b.id AND li.status = 'pending' AND li.due_date < CURRENT_DATE) as missedCount
              FROM borrowers b 
              JOIN lender_borrowers lb ON b.id = lb.borrower_id 
-             WHERE lb.lender_id = ?`,
+             LEFT JOIN users u ON b.nrc = u.nrc
+             WHERE lb.lender_id = ? AND (u.status IS NULL OR u.status != 'deactivated')
+             AND (b.nrc IS NULL OR b.nrc NOT LIKE '%_DEACT_%')`,
             [lenderId]
         );
 
@@ -270,37 +274,68 @@ exports.enableLogin = async (req, res) => {
         
         const b = borrower[0];
 
-        // 2. Generate random password
-        const plainPassword = 'LN@' + Math.floor(100000 + Math.random() * 899999);
+        // 2. Generate random password that meets criteria (Uppercase, Lowercase, Special, Min 8 chars)
+        const plainPassword = 'Ln@' + Math.floor(100000 + Math.random() * 899999);
         const hashedPassword = await bcrypt.hash(plainPassword, 10);
 
         // 3. Check if user already exists
         const [existing] = await db.execute('SELECT id FROM users WHERE phone = ? OR nrc = ?', [b.phone, b.nrc]);
         
+        // Clean phone and email of _DEACT_ suffix if present
+        let cleanPhone = b.phone || '';
+        let cleanEmail = b.email || '';
+        if (cleanPhone && cleanPhone.includes('_DEACT_')) cleanPhone = cleanPhone.split('_DEACT_')[0];
+        if (cleanEmail && cleanEmail.includes('_DEACT_')) cleanEmail = cleanEmail.split('_DEACT_')[0];
+
         let messageText = '';
         let messageSubject = '';
+        let isDeactivated = b.nrc && b.nrc.includes('_DEACT_');
+
+        if (isDeactivated) {
+            messageSubject = 'LendaNet Account Status';
+            messageText = `Dear ${b.name}, your LendaNet account has been deactivated by the administrator. Please contact support for more information.`;
+            
+            // Send Credentials Notification
+            const notificationService = require('../services/notification.service');
+            await notificationService.sendMultiChannel({
+                phone: cleanPhone,
+                email: cleanEmail,
+                smsBody: messageText,
+                emailSubject: messageSubject,
+                emailText: messageText
+            });
+
+            return res.json({
+                message: 'Deactivation notice sent successfully.',
+                credentials: {
+                    phone: cleanPhone,
+                    password: 'ACCOUNT DEACTIVATED'
+                }
+            });
+        }
 
         if (existing.length > 0) {
-            // User already exists (e.g. registered via invite link) -> Do NOT reset password
-            messageSubject = 'LendaNet Account Linkage';
-            messageText = `Your LendaNet account is active.\nPhone: ${b.phone}\nPlease use your registered password to log in to the application.`;
+            // Admin requested resend: Update password to a newly generated one
+            await db.execute('UPDATE users SET password = ? WHERE id = ?', [hashedPassword, existing[0].id]);
+            messageSubject = 'LendaNet Login Credentials Resent';
+            messageText = `Your LendaNet account credentials have been reset by the Admin.\nUsername: ${cleanPhone}\nNew Temporary Password: ${plainPassword}\n\nPlease log in at https://lendanet.com/login and change your password immediately.`;
         } else {
             // 4. Generate referral code and create new user record
             const referralCode = b.name.substring(0, 3).toUpperCase() + Math.floor(1000 + Math.random() * 9000);
             await db.execute(
                 'INSERT INTO users (name, phone, email, nrc, password, role, status, verificationStatus, referral_code) VALUES (?, ?, ?, ?, ?, "borrower", "active", "verified", ?)',
-                [b.name, b.phone, b.email || null, b.nrc, hashedPassword, referralCode]
+                [b.name, cleanPhone, cleanEmail || null, b.nrc, hashedPassword, referralCode]
             );
             messageSubject = 'LendaNet Login Enabled';
-            messageText = `Welcome to LendaNet! Your login has been enabled.\nPhone: ${b.phone}\nPassword: ${plainPassword}\n\nPlease log in to your account and update your password immediately after your first login for security purposes.`;
+            messageText = `Your Lendanet account has been successfully registered using the following details:\nUsername: ${cleanPhone}\nTemporary Password: ${plainPassword}\n\nPlease use the following link (https://lendanet.com/login) and click forgot password to create a new password as soon as possible for security reasons.`;
         }
 
         // Send Credentials Notification
         const notificationService = require('../services/notification.service');
         
         await notificationService.sendMultiChannel({
-            phone: b.phone,
-            email: b.email,
+            phone: cleanPhone,
+            email: cleanEmail,
             smsBody: messageText,
             emailSubject: messageSubject,
             emailText: messageText
@@ -309,7 +344,7 @@ exports.enableLogin = async (req, res) => {
         res.json({
             message: 'Credentials sent successfully.',
             credentials: {
-                phone: b.phone,
+                phone: cleanPhone,
                 password: existing.length > 0 ? 'Use registered password' : plainPassword
             }
         });
