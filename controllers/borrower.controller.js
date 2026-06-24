@@ -89,7 +89,8 @@ exports.addBorrower = async (req, res) => {
 
         res.status(201).json({
             message: 'Borrower created and added to your ledger.',
-            borrowerId
+            borrowerId,
+            plainPassword: finalPassword
         });
     } catch (error) {
         console.error('Add Borrower Error:', error);
