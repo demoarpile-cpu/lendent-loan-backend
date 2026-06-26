@@ -17,8 +17,19 @@ const upload = multer({ storage });
 
 const { protect } = require('../middleware/auth.middleware');
 
+const rateLimit = require('express-rate-limit');
+
+// Define rate limiter: 5 requests per 1 hour
+const loginLimiter = rateLimit({
+    windowMs: 60 * 60 * 1000, // 1 hour
+    max: 5, // Limit each IP to 5 login requests per window (1 hour)
+    message: { message: "Too many failed login attempts. For your security, your IP has been temporarily blocked from logging in. Please try again after 1 hour." },
+    standardHeaders: true, 
+    legacyHeaders: false, 
+});
+
 router.post('/register', upload.any(), authController.register);
-router.post('/login', authController.login);
+router.post('/login', loginLimiter, authController.login);
 router.get('/me', protect, authController.getMe);
 router.post('/verify-otp', authController.verifyOtp);
 router.post('/push-player-id', protect, authController.savePushPlayerId);
