@@ -56,6 +56,22 @@ exports.register = async (req, res) => {
             return res.status(400).json({ message: 'Name, Phone and Password are required' });
         }
 
+        // --- SECURITY VALIDATIONS ---
+        const phoneRegex = /^[0-9+ ]{8,15}$/;
+        if (!phoneRegex.test(phone)) {
+            return res.status(400).json({ message: 'Security Error: Invalid phone number format.' });
+        }
+
+        if (dob) {
+            const dobDate = new Date(dob);
+            const ageDifMs = Date.now() - dobDate.getTime();
+            const ageDate = new Date(ageDifMs);
+            const age = Math.abs(ageDate.getUTCFullYear() - 1970);
+            if (age < 18) {
+                return res.status(400).json({ message: 'Security Error: User must be at least 18 years old to register on a financial platform.' });
+            }
+        }
+
         // 1.5 Password strength validation
         const pwErrors = validatePassword(password);
         if (pwErrors.length > 0) {

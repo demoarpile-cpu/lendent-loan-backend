@@ -33,6 +33,21 @@ exports.createLoan = async (req, res) => {
         const finalDueDate = dueDate || due_date;
         const finalInstallmentsCount = installmentsCount || installments || 3;
 
+        // --- SECURITY VALIDATIONS ---
+        if (Number(finalAmount) <= 0) {
+            return res.status(400).json({ message: 'Security Error: Loan amount must be greater than 0' });
+        }
+        if (Number(finalInterestRate) < 0) {
+            return res.status(400).json({ message: 'Security Error: Interest rate cannot be negative' });
+        }
+        
+        const issueDateObj = new Date(finalIssueDate);
+        const today = new Date();
+        today.setHours(0,0,0,0);
+        if (issueDateObj < today) {
+            return res.status(400).json({ message: 'Security Error: Loan issue date cannot be in the past' });
+        }
+
         // 0. Check if borrower is deactivated
         const [borrowers] = await db.execute('SELECT nrc FROM borrowers WHERE id = ?', [finalBorrowerId]);
         if (borrowers.length > 0 && borrowers[0].nrc && borrowers[0].nrc.includes('_DEACT_')) {
