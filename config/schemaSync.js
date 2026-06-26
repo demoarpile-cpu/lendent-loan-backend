@@ -70,6 +70,20 @@ async function syncSchema() {
             }
         }
 
+        try {
+            await db.execute('ALTER TABLE users MODIFY phone VARCHAR(255), MODIFY nrc VARCHAR(255), MODIFY email VARCHAR(255)');
+            console.log('[DB-SYNC] Altered phone, nrc, email to VARCHAR(255) in users table.');
+        } catch (error) {
+            console.error('[DB-SYNC] Error modifying users columns:', error.message);
+        }
+
+        try {
+            await db.execute('ALTER TABLE borrowers MODIFY phone VARCHAR(255), MODIFY nrc VARCHAR(255), MODIFY email VARCHAR(255)');
+            console.log('[DB-SYNC] Altered phone, nrc, email to VARCHAR(255) in borrowers table.');
+        } catch (error) {
+            console.error('[DB-SYNC] Error modifying borrowers columns:', error.message);
+        }
+
         console.log('[DB-SYNC] Database schema is up to date.');
     } catch (error) {
         console.error('[DB-SYNC] Failed to sync database schema:', error.message);
