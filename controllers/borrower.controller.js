@@ -29,13 +29,28 @@ exports.addBorrower = async (req, res) => {
             }
         }
 
-        // 1b. Check if borrower exists in borrowers table
+        // 1b. Check if borrower exists in borrowers table by NRC
         let [existingB] = await db.execute('SELECT id, name, nrc, verificationStatus FROM borrowers WHERE nrc = ?', [nrc]);
         if (existingB.length > 0) {
             return res.status(409).json({ 
                 message: `NRC ${nrc} is already registered on the network.`,
                 existingBorrower: existingB[0]
             });
+        }
+
+        // 1c. Check if borrower exists in borrowers table by Phone or Email
+        let bContactQuery = 'SELECT * FROM borrowers WHERE phone = ?';
+        let bContactParams = [phone];
+        if (email && email.trim() !== '') {
+            bContactQuery += ' OR email = ?';
+            bContactParams.push(email);
+        }
+        let [existingBContact] = await db.execute(bContactQuery, bContactParams);
+        
+        if (existingBContact.length > 0) {
+            const dupBPhone = existingBContact.find(b => b.phone === phone);
+            if (dupBPhone) return res.status(409).json({ message: 'The phone number is already registered to another borrower.' });
+            return res.status(409).json({ message: 'The email address is already registered to another borrower.' });
         }
 
         // 2. Insert into borrowers table
@@ -56,10 +71,24 @@ exports.addBorrower = async (req, res) => {
         const referralCode = name.substring(0, 3).toUpperCase() + Math.floor(1000 + Math.random() * 9000);
 
         // Check if user already exists (by phone, email or NRC)
-        const [existingU] = await db.execute(
-            'SELECT * FROM users WHERE phone = ? OR (email IS NOT NULL AND email = ?) OR nrc = ?',
-            [phone, email || '---', nrc]
-        );
+        let uQuery = 'SELECT * FROM users WHERE phone = ? OR nrc = ?';
+        let uParams = [phone, nrc];
+        if (email && email.trim() !== '') {
+            uQuery += ' OR email = ?';
+            uParams.push(email);
+        }
+        const [existingU] = await db.execute(uQuery, uParams);
+
+        if (existingU.length > 0) {
+            const otherUserPhone = existingU.find(u => u.phone === phone && u.nrc !== nrc);
+            if (otherUserPhone) {
+                return res.status(409).json({ message: `The phone number is already registered to another account.` });
+            }
+            const otherUserEmail = existingU.find(u => email && u.email === email && u.nrc !== nrc);
+            if (otherUserEmail) {
+                return res.status(409).json({ message: `The email address is already registered to another account.` });
+            }
+        }
 
         if (existingU.length === 0) {
             await db.execute(
@@ -95,7 +124,10 @@ exports.addBorrower = async (req, res) => {
     } catch (error) {
         console.error('Add Borrower Error:', error);
         if (error.code === 'ER_DUP_ENTRY') {
-            return res.status(400).json({ message: 'A borrower with this Phone or Email already exists.' });
+            const errStr = error.message.toLowerCase();
+            if (errStr.includes('phone')) return res.status(409).json({ message: 'The phone number is already in use.' });
+            if (errStr.includes('email')) return res.status(409).json({ message: 'The email address is already in use.' });
+            return res.status(409).json({ message: 'This phone number or email is already registered.' });
         }
         res.status(500).json({ message: 'Server error adding borrower' });
     }
@@ -280,7 +312,14 @@ exports.enableLogin = async (req, res) => {
         const hashedPassword = await bcrypt.hash(plainPassword, 10);
 
         // 3. Check if user already exists
-        const [existing] = await db.execute('SELECT id FROM users WHERE phone = ? OR nrc = ?', [b.phone, b.nrc]);
+        const [existing] = await db.execute('SELECT id, nrc, role FROM users WHERE phone = ? OR nrc = ?', [b.phone, b.nrc]);
+
+        if (existing.length > 0) {
+            const otherUser = existing.find(u => u.phone === b.phone && u.nrc !== b.nrc);
+            if (otherUser) {
+                return res.status(409).json({ message: `The phone number is associated with another account. Please update the borrower's phone number before enabling login.` });
+            }
+        }
         
         // Clean phone and email of _DEACT_ suffix if present
         let cleanPhone = b.phone || '';
@@ -364,6 +403,24 @@ exports.updateBorrower = async (req, res) => {
         const [current] = await db.execute('SELECT nrc FROM borrowers WHERE id = ?', [id]);
         if (current.length === 0) return res.status(404).json({ message: 'Borrower not found' });
         const oldNrc = current[0].nrc;
+
+        if (phone || email) {
+            let uUpdateQuery = 'SELECT * FROM users WHERE phone = ? AND nrc != ?';
+            let uUpdateParams = [phone || '', oldNrc];
+            if (email && email.trim() !== '') {
+                uUpdateQuery = 'SELECT * FROM users WHERE (phone = ? OR email = ?) AND nrc != ?';
+                uUpdateParams = [phone || '', email, oldNrc];
+            }
+            const [existingU] = await db.execute(uUpdateQuery, uUpdateParams);
+            
+            if (existingU.length > 0) {
+                const dupPhone = existingU.find(u => u.phone === phone);
+                if (dupPhone) {
+                    return res.status(409).json({ message: 'Phone number is already in use by another account.' });
+                }
+                return res.status(409).json({ message: 'Email address is already in use by another account.' });
+            }
+        }
 
         let photoUrl = null;
         let nrcUrl = null;

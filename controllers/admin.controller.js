@@ -255,6 +255,19 @@ exports.getMembershipPlans = async (req, res) => {
     }
 };
 
+// Admin - Create Membership Plan
+exports.createMembershipPlan = async (req, res) => {
+    try {
+        const { name, price, duration_days } = req.body;
+        await db.execute('INSERT INTO membership_plans (name, price, duration_days) VALUES (?, ?, ?)',
+            [name, price, duration_days]);
+        res.status(201).json({ message: 'Membership plan created successfully' });
+    } catch (error) {
+        console.error(error);
+        res.status(500).json({ message: 'Server error' });
+    }
+};
+
 // Admin - Update Membership Plan
 exports.updateMembershipPlan = async (req, res) => {
     try {
@@ -263,6 +276,18 @@ exports.updateMembershipPlan = async (req, res) => {
         await db.execute('UPDATE membership_plans SET price = ?, duration_days = ? WHERE id = ?',
             [price, duration_days, id]);
         res.json({ message: 'Membership plan updated successfully' });
+    } catch (error) {
+        console.error(error);
+        res.status(500).json({ message: 'Server error' });
+    }
+};
+
+// Admin - Delete Membership Plan
+exports.deleteMembershipPlan = async (req, res) => {
+    try {
+        const { id } = req.params;
+        await db.execute('DELETE FROM membership_plans WHERE id = ?', [id]);
+        res.json({ message: 'Membership plan deleted successfully' });
     } catch (error) {
         console.error(error);
         res.status(500).json({ message: 'Server error' });
