@@ -430,7 +430,7 @@ exports.deleteBorrower = async (req, res) => {
         const [users] = await db.execute('SELECT * FROM users WHERE nrc = ? AND role = "borrower"', [nrc]);
         const user = users.length > 0 ? users[0] : null;
         
-        const isDeactivated = user && user.status === 'deactivated';
+        const isDeactivated = (user && user.status === 'deactivated') || (borrower.nrc && borrower.nrc.includes('_DEACT_'));
 
         if (isDeactivated) {
             // Reactivate
