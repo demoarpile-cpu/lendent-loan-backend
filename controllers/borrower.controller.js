@@ -38,6 +38,14 @@ exports.addBorrower = async (req, res) => {
             });
         }
 
+        // 1bb. Check if phone is already used by any user (Lender or Borrower) in users table
+        const [existingUserPhone] = await db.execute('SELECT id, role, name FROM users WHERE phone = ?', [phone]);
+        if (existingUserPhone.length > 0) {
+            return res.status(409).json({ 
+                message: `This phone number is already registered to a ${existingUserPhone[0].role} account (${existingUserPhone[0].name}). Please use a different phone number.` 
+            });
+        }
+
         // 1c. Check if borrower exists in borrowers table by Phone or Email
         let bContactQuery = 'SELECT * FROM borrowers WHERE phone = ?';
         let bContactParams = [phone];
@@ -316,9 +324,9 @@ exports.enableLogin = async (req, res) => {
         const [existing] = await db.execute('SELECT id, nrc, role FROM users WHERE phone = ? OR nrc = ?', [b.phone, b.nrc]);
 
         if (existing.length > 0) {
-            const otherUser = existing.find(u => u.phone === b.phone && u.nrc !== b.nrc);
-            if (otherUser) {
-                return res.status(409).json({ message: `The phone number is associated with another account. Please update the borrower's phone number before enabling login.` });
+            const otherUserPhone = existing.find(u => u.phone === b.phone);
+            if (otherUserPhone) {
+                return res.status(409).json({ message: `The phone number is associated with a ${otherUserPhone.role} account (${otherUserPhone.name || 'someone else'}). Please update the borrower's phone number before enabling login.` });
             }
         }
         
