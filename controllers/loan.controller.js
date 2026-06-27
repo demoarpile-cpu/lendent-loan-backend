@@ -125,22 +125,35 @@ exports.addPayment = async (req, res) => {
         const { id } = req.params; // Loan ID
         const { amount, method, installmentId, reference } = req.body;
 
-        // 1. Add Payment Record
-        await db.execute(
-            'INSERT INTO payments (loan_id, installment_id, amount, method, reference) VALUES (?, ?, ?, ?, ?)',
-            [id, installmentId || null, amount, method, reference || null]
-        );
-
-        // 2. Update Installment Status if applicable
-        if (installmentId) {
-            await db.execute(
-                'UPDATE loan_installments SET status = "paid", paid_amount = paid_amount + ?, paid_at = CURRENT_TIMESTAMP WHERE id = ?',
-                [amount, installmentId]
-            );
+        let isConfirming = false;
+        if (installmentId && req.user.role !== 'borrower') {
+            const [existing] = await db.execute('SELECT status FROM loan_installments WHERE id = ?', [installmentId]);
+            if (existing.length > 0 && existing[0].status === 'awaiting_confirmation') {
+                isConfirming = true;
+            }
         }
 
-        // 3. Check if all paid → update loan status (Checking for both pending and missed)
-        const [unpaid] = await db.execute('SELECT id FROM loan_installments WHERE loan_id = ? AND (status = "pending" OR status = "missed")', [id]);
+        if (isConfirming) {
+            await db.execute('UPDATE loan_installments SET status = "paid" WHERE id = ?', [installmentId]);
+        } else {
+            // 1. Add Payment Record
+            await db.execute(
+                'INSERT INTO payments (loan_id, installment_id, amount, method, reference) VALUES (?, ?, ?, ?, ?)',
+                [id, installmentId || null, amount, method, reference || null]
+            );
+
+            // 2. Update Installment Status if applicable
+            if (installmentId) {
+                const newStatus = req.user.role === 'borrower' ? 'awaiting_confirmation' : 'paid';
+                await db.execute(
+                    'UPDATE loan_installments SET status = ?, paid_amount = paid_amount + ?, paid_at = CURRENT_TIMESTAMP WHERE id = ?',
+                    [newStatus, amount, installmentId]
+                );
+            }
+        }
+
+        // 3. Check if all paid → update loan status (Checking for pending, missed, or awaiting_confirmation)
+        const [unpaid] = await db.execute('SELECT id FROM loan_installments WHERE loan_id = ? AND (status = "pending" OR status = "missed" OR status = "awaiting_confirmation")', [id]);
 
         if (unpaid.length === 0) {
             await db.execute('UPDATE loans SET status = "paid" WHERE id = ?', [id]);

@@ -91,6 +91,13 @@ async function syncSchema() {
             console.error('[DB-SYNC] Error modifying status ENUM:', error.message);
         }
 
+        try {
+            await db.execute("ALTER TABLE loan_installments MODIFY COLUMN status ENUM('pending','paid','missed','awaiting_confirmation') DEFAULT 'pending'");
+            console.log('[DB-SYNC] Updated status ENUM to include awaiting_confirmation in loan_installments table.');
+        } catch (error) {
+            console.error('[DB-SYNC] Error modifying loan_installments status ENUM:', error.message);
+        }
+
         console.log('[DB-SYNC] Database schema is up to date.');
     } catch (error) {
         console.error('[DB-SYNC] Failed to sync database schema:', error.message);
