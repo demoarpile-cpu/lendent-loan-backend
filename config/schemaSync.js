@@ -84,6 +84,13 @@ async function syncSchema() {
             console.error('[DB-SYNC] Error modifying borrowers columns:', error.message);
         }
 
+        try {
+            await db.execute("ALTER TABLE users MODIFY COLUMN status ENUM('pending','active','disabled','deactivated') DEFAULT 'pending'");
+            console.log('[DB-SYNC] Updated status ENUM to include deactivated in users table.');
+        } catch (error) {
+            console.error('[DB-SYNC] Error modifying status ENUM:', error.message);
+        }
+
         console.log('[DB-SYNC] Database schema is up to date.');
     } catch (error) {
         console.error('[DB-SYNC] Failed to sync database schema:', error.message);
