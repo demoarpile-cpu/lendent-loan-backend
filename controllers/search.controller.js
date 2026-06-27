@@ -119,7 +119,8 @@ exports.searchBorrower = async (req, res) => {
             );
             const totalDefaultRecords = centralDefaults[0].count || 0;
 
-            response.risk_status = (totalDefaultRecords > 0 || lateRows[0].lateCount > 0) ? 'RED' : (stats[0].activeLoans > 0 ? 'AMBER' : 'GREEN');
+            if (Number(stats[0].totalLoans) === 0) response.risk_status = 'GREEN';
+            else response.risk_status = (totalDefaultRecords > 0 || lateRows[0].lateCount > 0) ? 'RED' : (stats[0].activeLoans > 0 ? 'AMBER' : 'GREEN');
             response.activeLoans = stats[0].activeLoans;
             response.total_defaults = totalDefaultRecords;
             response.lateCount = lateRows[0].lateCount;

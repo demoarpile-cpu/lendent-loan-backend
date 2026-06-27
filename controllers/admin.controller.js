@@ -109,7 +109,8 @@ exports.getAllBorrowers = async (req, res) => {
             const missedCount = Number(b.missedCount) || 0;
 
             let risk = 'GREEN';
-            if (defaultCount > 0 || centralDefaults > 0 || missedCount > 0) risk = 'RED';
+            if (totalLoans === 0) risk = 'GREEN';
+            else if (defaultCount > 0 || centralDefaults > 0 || missedCount > 0) risk = 'RED';
             else if (totalLoans > 3) risk = 'AMBER';
 
             let userStatus = b.userStatus;

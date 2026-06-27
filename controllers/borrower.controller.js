@@ -196,9 +196,9 @@ exports.getLenderBorrowers = async (req, res) => {
 
         // 4. Map risk and filter sensitive data
         const formatted = borrowers.map(b => {
-             // Map Risk Level
              let risk = 'GREEN';
-             if (b.totalDefaults > 0 || b.centralDefaults > 0 || b.missedCount > 0) risk = 'RED';
+             if (Number(b.totalLoans) === 0) risk = 'GREEN';
+             else if (b.totalDefaults > 0 || b.centralDefaults > 0 || b.missedCount > 0) risk = 'RED';
              else if (b.totalLoans > 5) risk = 'AMBER';
              
              const result = { ...b, risk };
@@ -265,7 +265,8 @@ exports.getRiskSummary = async (req, res) => {
         const [central] = await db.execute('SELECT COUNT(*) as count FROM default_ledger WHERE nrc = ?', [borrower[0].nrc]);
         const totalDefaults = (stats[0].defaultCount || 0) + (central[0].count || 0);
 
-        if (totalDefaults > 0 || missedCount > 0) riskLevel = 'RED';
+        if (Number(stats[0].totalLoans) === 0) riskLevel = 'GREEN';
+        else if (totalDefaults > 0 || missedCount > 0) riskLevel = 'RED';
         else if (stats[0].totalLoans > 5) riskLevel = 'AMBER';
 
         const response = {
