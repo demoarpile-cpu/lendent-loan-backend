@@ -72,7 +72,7 @@ exports.addBorrower = async (req, res) => {
         let finalPassword = password;
         if (!finalPassword) {
             // Auto-generate a strong random password that meets criteria (Uppercase, Lowercase, Special, Min 8 chars)
-            finalPassword = 'Ln@' + Math.floor(100000 + Math.random() * 899999);
+            finalPassword = 'Ln!' + Math.floor(100000 + Math.random() * 899999);
         }
         
         const hashedPassword = await bcrypt.hash(finalPassword, 10);
@@ -317,7 +317,7 @@ exports.enableLogin = async (req, res) => {
         const b = borrower[0];
 
         // 2. Generate random password that meets criteria (Uppercase, Lowercase, Special, Min 8 chars)
-        const plainPassword = 'Ln@' + Math.floor(100000 + Math.random() * 899999);
+        const plainPassword = 'Ln!' + Math.floor(100000 + Math.random() * 899999);
         const hashedPassword = await bcrypt.hash(plainPassword, 10);
 
         // 3. Check if user already exists

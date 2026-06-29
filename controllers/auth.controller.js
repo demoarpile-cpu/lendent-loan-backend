@@ -27,7 +27,7 @@ exports.register = async (req, res) => {
 
         // Fallback for admin-created users without password
         if (!password) {
-            password = 'LendaNet@' + Math.floor(100+Math.random()*900);
+            password = 'LendaNet!' + Math.floor(100+Math.random()*900);
             console.log('Generating fallback password for admin user:', password);
         }
 
